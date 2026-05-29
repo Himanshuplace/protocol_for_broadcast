@@ -1,0 +1,199 @@
+version: "3.9"
+
+networks:
+  bench-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+
+volumes:
+  pgdata:
+  grafana-data:
+  prometheus-data:
+
+services:
+  # ── Data store ────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: benchmark
+      POSTGRES_USER: benchmark
+      POSTGRES_PASSWORD: benchmark
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ../pkg/collector/migrations:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U benchmark"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      bench-net:
+        ipv4_address: 172.20.0.10
+
+  # ── Observability stack ───────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+    networks:
+      bench-net:
+        ipv4_address: 172.20.0.20
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_SECURITY_ADMIN_PASSWORD: benchmark
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      bench-net:
+        ipv4_address: 172.20.0.21
+
+  # ── Result collector ──────────────────────────────────────────────────────────
+  result-collector:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server
+      args:
+        BINARY: result-collector
+    environment:
+      DATABASE_URL: "postgres://benchmark:benchmark@postgres:5432/benchmark?sslmode=disable"
+      LISTEN_ADDR: ":8080"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      bench-net:
+        ipv4_address: 172.20.0.30
+
+  # ── Protocol servers ──────────────────────────────────────────────────────────
+  udp-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server
+      args:
+        BINARY: udp-server
+    command: ["--addr", "0.0.0.0:9001"]
+    ports:
+      - "9001:9001/udp"
+    networks:
+      bench-net:
+        ipv4_address: 172.20.0.101
+
+  tcp-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server
+      args:
+        BINARY: tcp-server
+    command: ["--addr", "0.0.0.0:9002"]
+    ports:
+      - "9002:9002/tcp"
+    networks:
+      bench-net:
+        ipv4_address: 172.20.0.102
+
+  websocket-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server
+      args:
+        BINARY: websocket-server
+    command: ["--addr", "0.0.0.0:9003"]
+    ports:
+      - "9003:9003/tcp"
+    networks:
+      bench-net:
+        ipv4_address: 172.20.0.103
+
+  http1-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server
+      args:
+        BINARY: http1-server
+    command: ["--addr", "0.0.0.0:9004"]
+    ports:
+      - "9004:9004/tcp"
+    networks:
+      bench-net:
+        ipv4_address: 172.20.0.104
+
+  http2-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server
+      args:
+        BINARY: http2-server
+    command: ["--addr", "0.0.0.0:9005"]
+    ports:
+      - "9005:9005/tcp"
+    networks:
+      bench-net:
+        ipv4_address: 172.20.0.105
+
+  http3-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server
+      args:
+        BINARY: http3-server
+    command: ["--addr", "0.0.0.0:9006"]
+    ports:
+      - "9006:9006/udp"
+      - "9006:9006/tcp"
+    networks:
+      bench-net:
+        ipv4_address: 172.20.0.106
+
+  sse-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server
+      args:
+        BINARY: sse-server
+    command: ["--addr", "0.0.0.0:9007"]
+    ports:
+      - "9007:9007/tcp"
+    networks:
+      bench-net:
+        ipv4_address: 172.20.0.107
+
+  # ── Benchmark runner ──────────────────────────────────────────────────────────
+  benchmark-runner:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server
+      args:
+        BINARY: benchmark-runner
+    network_mode: host  # required for tc/netem interface access
+    cap_add:
+      - NET_ADMIN
+    environment:
+      DATABASE_URL: "postgres://benchmark:benchmark@172.20.0.10:5432/benchmark?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      result-collector:
+        condition: service_started
+    profiles:
+      - runner  # only start with: docker compose --profile runner up

@@ -1,0 +1,113 @@
+name: Weekly Benchmark
+
+on:
+  schedule:
+    - cron: "0 2 * * 0"  # Every Sunday at 02:00 UTC
+  workflow_dispatch:
+    inputs:
+      scenarios:
+        description: "Comma-separated scenarios (A,B,C)"
+        default: "A,B"
+        required: false
+      duration:
+        description: "Duration per scenario in seconds"
+        default: "30"
+        required: false
+
+defaults:
+  run:
+    working-directory: benchmark-lab
+
+env:
+  GOAMD64: v3
+
+jobs:
+  benchmark:
+    name: Full Protocol Benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+          cache-dependency-path: benchmark-lab/go.sum
+
+      - name: Install iproute2 (for tc/netem)
+        run: sudo apt-get install -y iproute2
+
+      - name: Build all binaries
+        run: |
+          mkdir -p bin
+          go build -o bin/ ./cmd/...
+
+      - name: Run broadcast strategy benchmarks
+        run: |
+          go test -bench=. -benchtime=10s -count=3 -benchmem \
+            ./internal/broadcast/... \
+            2>&1 | tee results/broadcast_bench.txt
+        continue-on-error: true
+
+      - name: Run wire format benchmarks
+        run: |
+          go test -bench=. -benchtime=5s -count=3 -benchmem \
+            ./pkg/wire/... \
+            ./pkg/transport/... \
+            2>&1 | tee results/wire_bench.txt
+
+      - name: Run protocol comparison (Scenario A, 30s each)
+        run: |
+          mkdir -p results
+          SCENARIOS="${{ github.event.inputs.scenarios || 'A,B' }}"
+          DURATION="${{ github.event.inputs.duration || '30' }}"
+
+          for proto in udp tcp; do
+            echo "=== $proto ==="
+            ./bin/benchmark-runner run \
+              --protocol "$proto" \
+              --scenario A \
+              --msg-size 1024 \
+              --duration "${DURATION}s" \
+              --warmup 5s \
+              --output json \
+              > "results/${proto}_scenario_A.json" 2>&1 || echo "SKIPPED ($proto not available in CI)"
+          done
+        continue-on-error: true
+
+      - name: Generate comparison report
+        run: |
+          if ls results/*.json 2>/dev/null | grep -v broadcast; then
+            jq -s 'flatten | sort_by(.lat_p99_ns)' results/*.json > results/combined.json 2>/dev/null || true
+            ./bin/benchmark-runner report --format markdown --out results/BENCHMARK.md \
+              2>/dev/null || \
+              echo "# Benchmark Results\n\nSee JSON artifacts." > results/BENCHMARK.md
+          fi
+        continue-on-error: true
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-results-${{ github.run_number }}
+          path: benchmark-lab/results/
+          retention-days: 90
+
+      - name: Post summary
+        if: always()
+        run: |
+          echo "## Benchmark Results" >> $GITHUB_STEP_SUMMARY
+          if [ -f results/BENCHMARK.md ]; then
+            cat results/BENCHMARK.md >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No results generated." >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -f results/broadcast_bench.txt ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Broadcast Strategy Benchmarks" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat results/broadcast_bench.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi

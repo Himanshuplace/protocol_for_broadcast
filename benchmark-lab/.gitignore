@@ -1,0 +1,25 @@
+bin/
+dist/
+vendor/
+*.test
+*.prof
+*.pem
+*.key
+*.crt
+certs/
+results/
+.env
+.env.*
+!.env.example
+*.log
+# Go
+*.out
+go.sum.bak
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+# OS
+.DS_Store
+Thumbs.db

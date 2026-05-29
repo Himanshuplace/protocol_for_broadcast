@@ -1,0 +1,52 @@
+# Multi-stage build: golang:1.23-bookworm builder → debian:bookworm-slim runtime.
+# Using bookworm (Debian 12 / glibc) rather than Alpine (musl) because:
+#   - cilium/ebpf requires glibc kernel headers for CGO compilation
+#   - iproute2 (tc/netem) is better tested on Debian
+#   - GOAMD64=v3 (AVX2) is fully supported; no musl SIMD quirks
+
+FROM golang:1.23-bookworm AS builder
+
+WORKDIR /app
+
+# Install protocol buffer compiler for proto generation
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    protobuf-compiler \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download dependencies first (cached layer)
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source and build
+COPY . .
+
+ARG BINARY=benchmark-runner
+
+# GOAMD64=v3: enables AVX2 on Intel Haswell 2013+ and AMD Ryzen Zen1 2017+
+# Used by bytedance/sonic for SIMD JSON and runtime memmove in broadcast hot paths
+ENV GOAMD64=v3
+
+RUN CGO_ENABLED=0 go build \
+    -ldflags="-s -w -X main.version=$(git describe --tags --always 2>/dev/null || echo dev)" \
+    -trimpath \
+    -o /bin/${BINARY} \
+    ./cmd/${BINARY}
+
+# ── Runtime image ──────────────────────────────────────────────────────────────
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    iproute2 \
+    ca-certificates \
+    tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG BINARY=benchmark-runner
+COPY --from=builder /bin/${BINARY} /bin/app
+
+# Prometheus metrics port
+EXPOSE 9090
+# Application port (varies by binary — overridden in docker-compose)
+EXPOSE 9000
+
+ENTRYPOINT ["/bin/app"]

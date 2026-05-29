@@ -1,0 +1,52 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+  external_labels:
+    monitor: benchmark-platform
+
+scrape_configs:
+  - job_name: udp-server
+    static_configs:
+      - targets: ["172.20.0.101:9190"]
+        labels:
+          protocol: udp
+
+  - job_name: tcp-server
+    static_configs:
+      - targets: ["172.20.0.102:9190"]
+        labels:
+          protocol: tcp
+
+  - job_name: websocket-server
+    static_configs:
+      - targets: ["172.20.0.103:9190"]
+        labels:
+          protocol: websocket
+
+  - job_name: http1-server
+    static_configs:
+      - targets: ["172.20.0.104:9190"]
+        labels:
+          protocol: http1
+
+  - job_name: http2-server
+    static_configs:
+      - targets: ["172.20.0.105:9190"]
+        labels:
+          protocol: http2
+
+  - job_name: http3-server
+    static_configs:
+      - targets: ["172.20.0.106:9190"]
+        labels:
+          protocol: http3
+
+  - job_name: sse-server
+    static_configs:
+      - targets: ["172.20.0.107:9190"]
+        labels:
+          protocol: sse
+
+  - job_name: result-collector
+    static_configs:
+      - targets: ["172.20.0.30:8080"]
