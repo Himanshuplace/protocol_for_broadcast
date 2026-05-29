@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "benchmark-lab/**"
+  pull_request:
+    branches: [main, master]
+    paths:
+      - "benchmark-lab/**"
+
+defaults:
+  run:
+    working-directory: benchmark-lab
+
+env:
+  GOAMD64: v3
+  GOGC: "100"
+
+jobs:
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: benchmark
+          POSTGRES_USER: benchmark
+          POSTGRES_PASSWORD: benchmark
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+          cache-dependency-path: benchmark-lab/go.sum
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Build all binaries
+        run: go build ./...
+
+      - name: Run unit tests (race detector)
+        run: go test -race -count=1 -timeout=120s ./...
+        env:
+          DATABASE_URL: "postgres://benchmark:benchmark@localhost:5432/benchmark?sslmode=disable"
+
+      - name: Run benchmarks (quick)
+        run: |
+          go test -bench=. -benchtime=3s -count=1 -benchmem \
+            ./pkg/wire/... \
+            ./pkg/transport/... \
+            2>&1 | tee bench_output.txt
+
+      - name: Upload bench results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-results
+          path: benchmark-lab/bench_output.txt
+
+  docker:
+    name: Docker Build Validation
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image (benchmark-runner)
+        run: |
+          docker build \
+            --build-arg BINARY=benchmark-runner \
+            -f docker/Dockerfile.server \
+            -t benchmark-runner:ci \
+            .
+
+      - name: Build Docker image (result-collector)
+        run: |
+          docker build \
+            --build-arg BINARY=result-collector \
+            -f docker/Dockerfile.server \
+            -t result-collector:ci \
+            .
