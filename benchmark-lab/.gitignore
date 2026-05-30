@@ -1,5 +1,26 @@
 bin/
 dist/
+# compiled binaries built in repo root (should be in bin/)
+benchmark-runner
+result-collector
+udp-server
+udp-client
+tcp-server
+tcp-client
+websocket-server
+websocket-client
+http1-server
+http1-client
+http2-server
+http2-client
+http3-server
+http3-client
+sse-server
+sse-client
+webtransport-server
+webtransport-client
+webrtc-server
+webrtc-client
 vendor/
 *.test
 *.prof
