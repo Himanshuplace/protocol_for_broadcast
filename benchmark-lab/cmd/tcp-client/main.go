@@ -1,17 +1,52 @@
-// tcp-client - benchmark client/server stub.
 package main
 
 import (
-	"context"
 	"flag"
+	"fmt"
+	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
+	"time"
+
+	"go.uber.org/zap"
+
+	"github.com/himanshuplace/protocol_for_broadcast/internal/tcp"
+	"github.com/himanshuplace/protocol_for_broadcast/pkg/transport"
 )
 
 func main() {
-	_ = flag.String("addr", "127.0.0.1:9000", "server address")
+	addr := flag.String("addr", "127.0.0.1:9002", "server address")
 	flag.Parse()
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
-	<-ctx.Done()
+
+	logger, err := zap.NewProduction()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to build logger: %v\n", err)
+		os.Exit(1)
+	}
+	defer logger.Sync() //nolint:errcheck
+
+	var received atomic.Uint64
+	handler := func(_ transport.ConnID, data []byte, _ time.Time) {
+		received.Add(1)
+	}
+
+	client := tcp.NewTCPClient(
+		tcp.WithTCPClientRecvHandler(handler),
+		tcp.WithTCPClientLogger(logger),
+	)
+
+	if err := client.Dial(*addr); err != nil {
+		logger.Error("dial failed", zap.Error(err))
+		os.Exit(1)
+	}
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	<-sig
+
+	if err := client.Close(); err != nil {
+		logger.Error("close error", zap.Error(err))
+	}
+	fmt.Printf("received %d messages\n", received.Load())
 }

@@ -116,8 +116,8 @@ func TestTCPServer_Broadcast(t *testing.T) {
 	case <-done:
 		// all received
 	case <-time.After(10 * time.Second):
-		for i, cnt := range recvCounts {
-			t.Logf("client %d received %d/%d", i, cnt.Load(), numMessages)
+		for i := range recvCounts {
+			t.Logf("client %d received %d/%d", i, recvCounts[i].Load(), numMessages)
 		}
 		t.Fatalf("timeout waiting for all messages")
 	}

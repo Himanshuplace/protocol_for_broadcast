@@ -74,12 +74,10 @@ type iouRing struct {
 	cqMask    *uint32
 	cqEntries []iouCQE
 
-	sqMmapBase uintptr
-	sqMmapSize uintptr
-	cqMmapBase uintptr
-	cqMmapSize uintptr
-	sqeMmap    uintptr
-	sqeMmapSz  uintptr
+	// mmap backing slices; used for munmap on teardown.
+	sqMmapBytes []byte // SQ ring control region
+	sqeBytes    []byte // SQE array region
+	cqMmapBytes []byte // CQ ring control region
 
 	mu sync.Mutex
 }
@@ -296,87 +294,71 @@ func setupIOURing(entries uint32) (*iouRing, error) {
 
 	ring := &iouRing{fd: int(fd)}
 
-	// mmap the SQ ring.
-	sqSize := uintptr(params.sqOff.array) + uintptr(params.sqEntries)*4
-	sqBase, _, errno := unix.Syscall6(unix.SYS_MMAP, 0, sqSize,
-		unix.PROT_READ|unix.PROT_WRITE,
-		unix.MAP_SHARED|unix.MAP_POPULATE,
-		fd, uintptr(iouOffSQRing))
-	if errno != 0 {
+	// mmap the SQ ring control region.
+	// unix.Mmap returns []byte; indexing into it gives valid Go pointers — no unsafe.Pointer
+	// arithmetic on raw uintptr values required, which keeps go vet clean.
+	sqSize := int(params.sqOff.array) + int(params.sqEntries)*4
+	sqBytes, err := unix.Mmap(int(fd), int64(iouOffSQRing), sqSize,
+		unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED|unix.MAP_POPULATE)
+	if err != nil {
 		unix.Close(int(fd))
-		return nil, fmt.Errorf("io_uring mmap SQ ring: %w", errno)
+		return nil, fmt.Errorf("io_uring mmap SQ ring: %w", err)
 	}
-	ring.sqMmapBase = sqBase
-	ring.sqMmapSize = sqSize
+	ring.sqMmapBytes = sqBytes
 
-	ring.sqHead = (*uint32)(unsafe.Pointer(sqBase + uintptr(params.sqOff.head)))
-	ring.sqTail = (*uint32)(unsafe.Pointer(sqBase + uintptr(params.sqOff.tail)))
-	ring.sqMask = (*uint32)(unsafe.Pointer(sqBase + uintptr(params.sqOff.ringMask)))
-	ring.sqFlags = (*uint32)(unsafe.Pointer(sqBase + uintptr(params.sqOff.flags)))
-	ring.sqDropped = (*uint32)(unsafe.Pointer(sqBase + uintptr(params.sqOff.dropped)))
+	ring.sqHead = (*uint32)(unsafe.Pointer(&sqBytes[params.sqOff.head]))
+	ring.sqTail = (*uint32)(unsafe.Pointer(&sqBytes[params.sqOff.tail]))
+	ring.sqMask = (*uint32)(unsafe.Pointer(&sqBytes[params.sqOff.ringMask]))
+	ring.sqFlags = (*uint32)(unsafe.Pointer(&sqBytes[params.sqOff.flags]))
+	ring.sqDropped = (*uint32)(unsafe.Pointer(&sqBytes[params.sqOff.dropped]))
 
-	arrPtr := (*uint32)(unsafe.Pointer(sqBase + uintptr(params.sqOff.array)))
-	arrSlice := unsafe.Slice(arrPtr, params.sqEntries)
-	ring.sqArray = arrSlice
+	arrPtr := (*uint32)(unsafe.Pointer(&sqBytes[params.sqOff.array]))
+	ring.sqArray = unsafe.Slice(arrPtr, params.sqEntries)
 
 	// mmap the SQE array.
-	sqeSize := uintptr(params.sqEntries) * 64 // sizeof(io_uring_sqe) == 64
-	sqeBase, _, errno := unix.Syscall6(unix.SYS_MMAP, 0, sqeSize,
-		unix.PROT_READ|unix.PROT_WRITE,
-		unix.MAP_SHARED|unix.MAP_POPULATE,
-		fd, uintptr(iouOffSQEs))
-	if errno != 0 {
-		unix.Munmap((*[1 << 30]byte)(unsafe.Pointer(sqBase))[:sqSize])
+	sqeSize := int(params.sqEntries) * 64 // sizeof(io_uring_sqe) == 64
+	sqeBytes, err := unix.Mmap(int(fd), int64(iouOffSQEs), sqeSize,
+		unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED|unix.MAP_POPULATE)
+	if err != nil {
+		unix.Munmap(ring.sqMmapBytes) //nolint:errcheck
 		unix.Close(int(fd))
-		return nil, fmt.Errorf("io_uring mmap SQE array: %w", errno)
+		return nil, fmt.Errorf("io_uring mmap SQE array: %w", err)
 	}
-	ring.sqeMmap = sqeBase
-	ring.sqeMmapSz = sqeSize
+	ring.sqeBytes = sqeBytes
+	ring.sqEntries = unsafe.Slice((*iouSQE)(unsafe.Pointer(&sqeBytes[0])), params.sqEntries)
 
-	sqePtr := (*iouSQE)(unsafe.Pointer(sqeBase))
-	ring.sqEntries = unsafe.Slice(sqePtr, params.sqEntries)
-
-	// mmap the CQ ring.
-	cqSize := uintptr(params.cqOff.cqes) + uintptr(params.cqEntries)*16 // sizeof(io_uring_cqe) == 16
-	cqBase, _, errno := unix.Syscall6(unix.SYS_MMAP, 0, cqSize,
-		unix.PROT_READ|unix.PROT_WRITE,
-		unix.MAP_SHARED|unix.MAP_POPULATE,
-		fd, uintptr(iouOffCQRing))
-	if errno != 0 {
-		unix.Munmap((*[1 << 30]byte)(unsafe.Pointer(sqeMmap))[:sqeSize])
-		unix.Munmap((*[1 << 30]byte)(unsafe.Pointer(sqBase))[:sqSize])
+	// mmap the CQ ring control region.
+	cqSize := int(params.cqOff.cqes) + int(params.cqEntries)*16 // sizeof(io_uring_cqe) == 16
+	cqBytes, err := unix.Mmap(int(fd), int64(iouOffCQRing), cqSize,
+		unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED|unix.MAP_POPULATE)
+	if err != nil {
+		unix.Munmap(ring.sqeBytes)    //nolint:errcheck
+		unix.Munmap(ring.sqMmapBytes) //nolint:errcheck
 		unix.Close(int(fd))
-		return nil, fmt.Errorf("io_uring mmap CQ ring: %w", errno)
+		return nil, fmt.Errorf("io_uring mmap CQ ring: %w", err)
 	}
-	_ = cqBase
-	ring.cqMmapBase = cqBase
-	ring.cqMmapSize = cqSize
+	ring.cqMmapBytes = cqBytes
 
-	ring.cqHead = (*uint32)(unsafe.Pointer(cqBase + uintptr(params.cqOff.head)))
-	ring.cqTail = (*uint32)(unsafe.Pointer(cqBase + uintptr(params.cqOff.tail)))
-	ring.cqMask = (*uint32)(unsafe.Pointer(cqBase + uintptr(params.cqOff.ringMask)))
-
-	cqePtr := (*iouCQE)(unsafe.Pointer(cqBase + uintptr(params.cqOff.cqes)))
-	ring.cqEntries = unsafe.Slice(cqePtr, params.cqEntries)
+	ring.cqHead = (*uint32)(unsafe.Pointer(&cqBytes[params.cqOff.head]))
+	ring.cqTail = (*uint32)(unsafe.Pointer(&cqBytes[params.cqOff.tail]))
+	ring.cqMask = (*uint32)(unsafe.Pointer(&cqBytes[params.cqOff.ringMask]))
+	ring.cqEntries = unsafe.Slice((*iouCQE)(unsafe.Pointer(&cqBytes[params.cqOff.cqes])), params.cqEntries)
 
 	return ring, nil
 }
-
-// sqeMmap is a package-level alias used in the cleanup path above (avoids repetition).
-var sqeMmap uintptr // shadow — only read in teardown context
 
 func teardownIOURing(ring *iouRing) error {
 	if ring == nil {
 		return nil
 	}
-	if ring.cqMmapBase != 0 {
-		unix.Munmap((*[1 << 30]byte)(unsafe.Pointer(ring.cqMmapBase))[:ring.cqMmapSize])
+	if ring.cqMmapBytes != nil {
+		unix.Munmap(ring.cqMmapBytes) //nolint:errcheck
 	}
-	if ring.sqeMmap != 0 {
-		unix.Munmap((*[1 << 30]byte)(unsafe.Pointer(ring.sqeMmap))[:ring.sqeMmapSz])
+	if ring.sqeBytes != nil {
+		unix.Munmap(ring.sqeBytes) //nolint:errcheck
 	}
-	if ring.sqMmapBase != 0 {
-		unix.Munmap((*[1 << 30]byte)(unsafe.Pointer(ring.sqMmapBase))[:ring.sqMmapSize])
+	if ring.sqMmapBytes != nil {
+		unix.Munmap(ring.sqMmapBytes) //nolint:errcheck
 	}
 	return unix.Close(ring.fd)
 }
