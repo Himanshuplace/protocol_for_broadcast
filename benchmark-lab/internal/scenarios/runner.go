@@ -95,8 +95,20 @@ func (r *ScenarioRunner) Run(ctx context.Context) (*collector.RunResult, error) 
 	}
 	defer srv.Stop() //nolint:errcheck
 
-	// Allow server to initialize
+	// Allow server to initialize before clients connect.
 	time.Sleep(50 * time.Millisecond)
+
+	// Connect receiver clients. Their RecvHandler feeds into r.recorder.
+	closeFuncs := r.connectClients(ctx, r.cfg.ReceiverCount)
+	defer func() {
+		for _, cf := range closeFuncs {
+			cf()
+		}
+	}()
+	if len(closeFuncs) > 0 {
+		// Brief settling time for clients to complete their handshakes.
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	gen := r.makeGenerator()
 	startedAt := time.Now()

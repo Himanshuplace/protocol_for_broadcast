@@ -36,8 +36,8 @@ type ShardedBroadcaster struct {
 	wg     sync.WaitGroup
 }
 
-// NewShardedBroadcaster creates a ShardedBroadcaster. Call Start() to launch
-// the shard goroutines before the first Broadcast.
+// NewShardedBroadcaster creates a ShardedBroadcaster and starts its shard goroutines.
+// Call Stop() when done to shut down the background goroutines cleanly.
 func NewShardedBroadcaster() *ShardedBroadcaster {
 	b := &ShardedBroadcaster{
 		stop: make(chan struct{}),
@@ -45,6 +45,7 @@ func NewShardedBroadcaster() *ShardedBroadcaster {
 	for i := 0; i < numShards; i++ {
 		b.shards[i].ch = make(chan []byte, shardChanCap)
 	}
+	b.Start()
 	return b
 }
 
