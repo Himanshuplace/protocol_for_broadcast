@@ -17,6 +17,7 @@ import (
 	itls "github.com/himanshuplace/protocol_for_broadcast/internal/tls"
 	"github.com/himanshuplace/protocol_for_broadcast/pkg/metrics"
 	"github.com/himanshuplace/protocol_for_broadcast/pkg/transport"
+	"github.com/himanshuplace/protocol_for_broadcast/pkg/wire"
 )
 
 // Mode controls the WebTransport data delivery primitive.
@@ -173,8 +174,9 @@ func (s *WebTransportServer) readBidiStream(ctx context.Context, stream *wt.Stre
 }
 
 func (s *WebTransportServer) Broadcast(data []byte) error {
+	frame := wire.Encode(s.seqCounter.Add(1), time.Now().UnixNano(), data)
 	s.sent.Add(1)
-	s.sentBytes.Add(uint64(len(data)))
+	s.sentBytes.Add(uint64(len(frame)))
 
 	s.sessions.Range(func(key, val any) bool {
 		wtSess := val.(*wtSession)
@@ -185,19 +187,19 @@ func (s *WebTransportServer) Broadcast(data []byte) error {
 		ctx := context.Background()
 		switch s.mode {
 		case ModeDatagrams:
-			err = wtSess.session.SendDatagram(data)
+			err = wtSess.session.SendDatagram(frame)
 		case ModeUniStream:
 			var stream *wt.SendStream
 			stream, err = wtSess.session.OpenUniStreamSync(ctx)
 			if err == nil {
-				_, err = stream.Write(data)
+				_, err = stream.Write(frame)
 				stream.Close()
 			}
 		case ModeBidiStream:
 			var stream *wt.Stream
 			stream, err = wtSess.session.OpenStreamSync(ctx)
 			if err == nil {
-				_, err = stream.Write(data)
+				_, err = stream.Write(frame)
 			}
 		}
 		if err != nil {

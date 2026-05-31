@@ -22,6 +22,7 @@ import (
 	nhws "github.com/coder/websocket"
 	"github.com/google/uuid"
 	"github.com/himanshuplace/protocol_for_broadcast/pkg/transport"
+	"github.com/himanshuplace/protocol_for_broadcast/pkg/wire"
 	"go.uber.org/zap"
 )
 
@@ -53,10 +54,11 @@ type CoderServer struct {
 	cfg transport.TransportConfig
 
 	// counters
-	sent      atomic.Uint64
-	recv      atomic.Uint64
-	bytesSent atomic.Uint64
-	bytesRecv atomic.Uint64
+	seqCounter atomic.Uint64
+	sent       atomic.Uint64
+	recv       atomic.Uint64
+	bytesSent  atomic.Uint64
+	bytesRecv  atomic.Uint64
 }
 
 // NewCoderServer creates a CoderServer ready to be started.
@@ -220,10 +222,11 @@ func (s *CoderServer) Broadcast(data []byte) error {
 	if !s.IsStarted() {
 		return transport.ErrNotStarted
 	}
+	frame := wire.Encode(s.seqCounter.Add(1), time.Now().UnixNano(), data)
 	conns := s.registry.Snapshot()
 	for _, cc := range conns {
 		select {
-		case cc.writeCh <- data:
+		case cc.writeCh <- frame:
 		default:
 			s.logger.Debug("coder write channel full, dropping message",
 				zap.String("id", string(cc.id)))

@@ -52,10 +52,11 @@ type GorillaServer struct {
 	cfg transport.TransportConfig
 
 	// counters
-	sent     atomic.Uint64
-	recv     atomic.Uint64
-	bytesSent atomic.Uint64
-	bytesRecv atomic.Uint64
+	seqCounter atomic.Uint64
+	sent       atomic.Uint64
+	recv       atomic.Uint64
+	bytesSent  atomic.Uint64
+	bytesRecv  atomic.Uint64
 }
 
 // NewGorillaServer creates a GorillaServer ready to be started.
@@ -231,10 +232,11 @@ func (s *GorillaServer) Broadcast(data []byte) error {
 	if !s.IsStarted() {
 		return transport.ErrNotStarted
 	}
+	frame := wire.Encode(s.seqCounter.Add(1), time.Now().UnixNano(), data)
 	conns := s.registry.Snapshot()
 	for _, gc := range conns {
 		select {
-		case gc.writeCh <- data:
+		case gc.writeCh <- frame:
 		default:
 			// Slow consumer — drop the message rather than blocking the broadcast path.
 			s.logger.Debug("gorilla write channel full, dropping message",
@@ -271,6 +273,5 @@ func (s *GorillaServer) Stats() transport.Stats {
 	st.Received = s.recv.Load()
 	st.BytesSent = s.bytesSent.Load()
 	st.BytesRecv = s.bytesRecv.Load()
-	_ = wire.HeaderLen // satisfy import
 	return st
 }

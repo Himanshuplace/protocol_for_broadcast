@@ -1,4 +1,4 @@
-// tcp-server starts the tcp benchmark server.
+// tcp-server starts a TCP benchmark server.
 package main
 
 import (
@@ -10,20 +10,41 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+
+	"github.com/himanshuplace/protocol_for_broadcast/internal/tcp"
+	"github.com/himanshuplace/protocol_for_broadcast/pkg/metrics"
 )
 
 func main() {
-	addr := flag.String("addr", "0.0.0.0:910046", "listen address")
+	addr := flag.String("addr", "0.0.0.0:9000", "listen address")
 	flag.Parse()
 
 	logger, _ := zap.NewProduction()
-	defer logger.Sync()
-	_ = logger
-	_ = addr
-	_ = fmt.Sprintf
+	defer logger.Sync() //nolint:errcheck
+
+	rec := metrics.NewRecorder(metrics.RecorderConfig{Label: "tcp-server", Protocol: "tcp"})
+	srv := tcp.NewTCPServer(*addr,
+		tcp.WithTCPServerLogger(logger),
+		tcp.WithTCPServerRecorder(rec),
+	)
+	if err := srv.Start(); err != nil {
+		logger.Fatal("start", zap.Error(err))
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
-	_ = time.Second
-	<-ctx.Done()
+
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			_ = srv.Stop()
+			return
+		case <-ticker.C:
+			s := srv.Stats()
+			fmt.Printf("tcp-server: conns=%d sent=%d recv=%d lost=%d\n",
+				s.Connections, s.Sent, s.Received, s.Lost)
+		}
+	}
 }

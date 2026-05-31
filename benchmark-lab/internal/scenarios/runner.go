@@ -35,6 +35,9 @@ type ScenarioConfig struct {
 	ServerAddr     string
 	ServerPort     int
 	LogLevel       string
+	// RecvHandler is injected by the runner so factories can route client-side
+	// receives back into the runner's recorder for latency and throughput tracking.
+	RecvHandler transport.RecvHandler
 }
 
 // TransportFactory creates a transport from a config.
@@ -83,6 +86,15 @@ func (r *ScenarioRunner) Run(ctx context.Context) (*collector.RunResult, error) 
 	factoryMu.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("scenario runner: unknown protocol %q", r.cfg.Protocol)
+	}
+
+	// Inject a RecvHandler so factories can route client receives into this recorder.
+	r.cfg.RecvHandler = func(_ transport.ConnID, data []byte, recvAt time.Time) {
+		seq, sendNs, _, err := wire.DecodeHeader(data)
+		if err != nil {
+			return
+		}
+		r.recorder.RecordRecv(seq, sendNs, len(data), recvAt.UnixNano())
 	}
 
 	srv, err := factory(r.cfg, r.logger)
@@ -215,10 +227,7 @@ func (r *ScenarioRunner) broadcastLoop(ctx context.Context, srv transport.Transp
 
 		n := sent.Add(1)
 		if !warmup {
-			_, _, _, err := wire.DecodeHeader(data)
-			if err == nil {
-				r.recorder.RecordSend(n, len(data))
-			}
+			r.recorder.RecordSend(n, len(data))
 		}
 	}
 }

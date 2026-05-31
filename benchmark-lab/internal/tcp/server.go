@@ -126,6 +126,11 @@ func (s *TCPServer) Start() error {
 	if n > 4 {
 		n = 4
 	}
+	// SO_REUSEPORT is Linux-only. On other platforms a second Listen on the same
+	// port fails with EADDRINUSE, so cap at 1 listener.
+	if runtime.GOOS != "linux" {
+		n = 1
+	}
 
 	// For the first listener, let OS pick a port if addr ends in ":0".
 	// Subsequent listeners bind to the same resolved port.

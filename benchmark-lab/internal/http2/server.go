@@ -31,6 +31,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/himanshuplace/protocol_for_broadcast/pkg/transport"
+	"github.com/himanshuplace/protocol_for_broadcast/pkg/wire"
 	"go.uber.org/zap"
 )
 
@@ -58,11 +59,12 @@ type HTTP2Server struct {
 	cfg transport.TransportConfig
 
 	// counters
-	sent      atomic.Uint64
-	recv      atomic.Uint64
-	bytesSent atomic.Uint64
-	bytesRecv atomic.Uint64
-	connCount atomic.Int64
+	seqCounter atomic.Uint64
+	sent       atomic.Uint64
+	recv       atomic.Uint64
+	bytesSent  atomic.Uint64
+	bytesRecv  atomic.Uint64
+	connCount  atomic.Int64
 }
 
 // NewHTTP2Server creates an HTTP2Server ready to be started.
@@ -226,10 +228,11 @@ func (s *HTTP2Server) Broadcast(data []byte) error {
 	if !s.IsStarted() {
 		return transport.ErrNotStarted
 	}
+	frame := wire.Encode(s.seqCounter.Add(1), time.Now().UnixNano(), data)
 	s.streams.Range(func(_, v any) bool {
 		if e, ok := v.(*streamEntry); ok {
 			select {
-			case e.ch <- data:
+			case e.ch <- frame:
 			default:
 				s.logger.Debug("http2 stream channel full, dropping message",
 					zap.String("id", string(e.id)))

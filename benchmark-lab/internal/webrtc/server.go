@@ -11,6 +11,7 @@ import (
 
 	"github.com/himanshuplace/protocol_for_broadcast/pkg/metrics"
 	"github.com/himanshuplace/protocol_for_broadcast/pkg/transport"
+	"github.com/himanshuplace/protocol_for_broadcast/pkg/wire"
 )
 
 // ChannelMode controls DataChannel reliability.
@@ -38,11 +39,12 @@ type WebRTCServer struct {
 	peers     sync.Map // id -> *rtcPeer
 	peersMu   sync.RWMutex
 
-	sent      atomic.Uint64
-	recv      atomic.Uint64
-	lost      atomic.Uint64
-	sentBytes atomic.Uint64
-	recvBytes atomic.Uint64
+	seqCounter atomic.Uint64
+	sent       atomic.Uint64
+	recv       atomic.Uint64
+	lost       atomic.Uint64
+	sentBytes  atomic.Uint64
+	recvBytes  atomic.Uint64
 
 	metrics *metrics.Recorder
 	logger  *zap.Logger
@@ -134,8 +136,9 @@ func (s *WebRTCServer) onPeerConnected(id string, pc *webrtc.PeerConnection) {
 }
 
 func (s *WebRTCServer) Broadcast(data []byte) error {
+	frame := wire.Encode(s.seqCounter.Add(1), time.Now().UnixNano(), data)
 	s.sent.Add(1)
-	s.sentBytes.Add(uint64(len(data)))
+	s.sentBytes.Add(uint64(len(frame)))
 
 	s.peers.Range(func(key, val any) bool {
 		peer := val.(*rtcPeer)
@@ -146,7 +149,7 @@ func (s *WebRTCServer) Broadcast(data []byte) error {
 			s.lost.Add(1)
 			return true
 		}
-		if err := peer.dc.Send(data); err != nil {
+		if err := peer.dc.Send(frame); err != nil {
 			s.lost.Add(1)
 		}
 		return true

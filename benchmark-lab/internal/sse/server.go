@@ -200,12 +200,9 @@ func (s *SSEServer) addToReplay(ev sseEvent) {
 }
 
 func (s *SSEServer) Broadcast(data []byte) error {
-	frame, _, err := wire.Decode(data)
-	if err != nil || len(frame.Payload) == 0 {
-		// treat as raw data
-	}
-	encoded := base64.StdEncoding.EncodeToString(data)
 	seq := s.seqCounter.Add(1)
+	wireFrame := wire.Encode(seq, time.Now().UnixNano(), data)
+	encoded := base64.StdEncoding.EncodeToString(wireFrame)
 	ev := sseEvent{id: seq, data: []byte(encoded)}
 
 	s.addToReplay(ev)

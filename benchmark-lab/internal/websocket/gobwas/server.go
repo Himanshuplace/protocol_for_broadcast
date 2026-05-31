@@ -24,6 +24,7 @@ import (
 	"github.com/gobwas/ws"
 	"github.com/google/uuid"
 	"github.com/himanshuplace/protocol_for_broadcast/pkg/transport"
+	"github.com/himanshuplace/protocol_for_broadcast/pkg/wire"
 	"go.uber.org/zap"
 )
 
@@ -57,10 +58,11 @@ type GobwasServer struct {
 	cfg transport.TransportConfig
 
 	// counters
-	sent      atomic.Uint64
-	recv      atomic.Uint64
-	bytesSent atomic.Uint64
-	bytesRecv atomic.Uint64
+	seqCounter atomic.Uint64
+	sent       atomic.Uint64
+	recv       atomic.Uint64
+	bytesSent  atomic.Uint64
+	bytesRecv  atomic.Uint64
 }
 
 // NewGobwasServer creates a GobwasServer ready to be started.
@@ -254,10 +256,11 @@ func (s *GobwasServer) Broadcast(data []byte) error {
 	if !s.IsStarted() {
 		return transport.ErrNotStarted
 	}
+	frame := wire.Encode(s.seqCounter.Add(1), time.Now().UnixNano(), data)
 	conns := s.registry.Snapshot()
 	for _, gc := range conns {
 		select {
-		case gc.writeCh <- data:
+		case gc.writeCh <- frame:
 		default:
 			s.logger.Debug("gobwas write channel full, dropping message",
 				zap.String("id", string(gc.id)))
