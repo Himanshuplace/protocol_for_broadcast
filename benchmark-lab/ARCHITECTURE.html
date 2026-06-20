@@ -1,0 +1,1284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Protocol Benchmark Platform — Architecture</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface2: #1c2128;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --heading: #f0f6fc;
+  --muted: #8b949e;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --yellow: #d29922;
+  --red: #f85149;
+  --purple: #bc8cff;
+  --orange: #ffa657;
+  --pink: #f778ba;
+  --code-bg: #161b22;
+
+  --p-udp: #f97316;
+  --p-tcp: #ef4444;
+  --p-h1: #3b82f6;
+  --p-h2: #06b6d4;
+  --p-h3: #8b5cf6;
+  --p-sse: #ec4899;
+  --p-ws: #10b981;
+  --p-wt: #f59e0b;
+  --p-rtc: #6366f1;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ── Nav ───────────────────────────────────────────── */
+nav {
+  width: 220px;
+  min-width: 220px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 24px 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  font-size: 13px;
+}
+
+nav .logo {
+  padding: 0 20px 20px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+
+nav .logo h2 { color: var(--heading); font-size: 14px; font-weight: 600; }
+nav .logo p { color: var(--muted); font-size: 11px; margin-top: 2px; }
+
+nav a {
+  display: block;
+  padding: 7px 20px;
+  color: var(--muted);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  transition: all 0.15s;
+}
+nav a:hover, nav a.active {
+  color: var(--accent);
+  border-left-color: var(--accent);
+  background: rgba(88,166,255,0.05);
+}
+nav .section-label {
+  padding: 12px 20px 4px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* ── Main ──────────────────────────────────────────── */
+main {
+  flex: 1;
+  overflow-x: hidden;
+  padding: 0 0 80px;
+}
+
+.section {
+  padding: 48px 48px 32px;
+  border-bottom: 1px solid var(--border);
+  max-width: 1100px;
+}
+
+h1 { color: var(--heading); font-size: 26px; font-weight: 700; margin-bottom: 8px; }
+h2 { color: var(--heading); font-size: 20px; font-weight: 600; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+h3 { color: var(--heading); font-size: 15px; font-weight: 600; margin-bottom: 10px; }
+p  { margin-bottom: 12px; color: var(--text); }
+
+.subtitle { color: var(--muted); font-size: 15px; margin-bottom: 24px; }
+
+code {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+  font-size: 12px;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--orange);
+}
+
+pre {
+  font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+  font-size: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px;
+  overflow-x: auto;
+  color: var(--text);
+  line-height: 1.7;
+  margin: 12px 0;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.badge-green  { background: rgba(63,185,80,.15); color: var(--green); border: 1px solid rgba(63,185,80,.3); }
+.badge-red    { background: rgba(248,81,73,.15);  color: var(--red);   border: 1px solid rgba(248,81,73,.3); }
+.badge-yellow { background: rgba(210,153,34,.15); color: var(--yellow);border: 1px solid rgba(210,153,34,.3); }
+.badge-blue   { background: rgba(88,166,255,.15); color: var(--accent);border: 1px solid rgba(88,166,255,.3); }
+.badge-purple { background: rgba(188,140,255,.15);color: var(--purple);border: 1px solid rgba(188,140,255,.3); }
+
+/* ── Architecture Diagram ──────────────────────────── */
+.arch-diagram {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 24px 0;
+}
+
+.arch-layer {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+  position: relative;
+}
+
+.arch-arrow {
+  text-align: center;
+  padding: 6px;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.arch-box {
+  flex: 1;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+  position: relative;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.arch-box:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(88,166,255,0.2);
+}
+.arch-box .box-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--heading);
+  margin-bottom: 6px;
+}
+.arch-box .box-file {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: monospace;
+  margin-bottom: 8px;
+}
+.arch-box .box-detail {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.arch-box.highlight-blue { border-color: var(--accent); }
+.arch-box.highlight-green { border-color: var(--green); }
+.arch-box.highlight-purple { border-color: var(--purple); }
+.arch-box.highlight-orange { border-color: var(--orange); }
+
+/* ── Flow Steps ─────────────────────────────────────── */
+.flow-steps {
+  counter-reset: step;
+  margin: 20px 0;
+}
+
+.flow-step {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 20px;
+  position: relative;
+}
+
+.flow-step::before {
+  content: '';
+  position: absolute;
+  left: 19px;
+  top: 40px;
+  bottom: -20px;
+  width: 2px;
+  background: var(--border);
+}
+.flow-step:last-child::before { display: none; }
+
+.step-num {
+  counter-increment: step;
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  background: var(--surface2);
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--accent);
+  z-index: 1;
+}
+
+.step-content {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 18px;
+}
+
+.step-content h4 { color: var(--heading); font-size: 13px; margin-bottom: 6px; }
+.step-content p  { font-size: 12px; margin-bottom: 6px; color: var(--text); }
+.step-content pre { margin: 8px 0 0; }
+
+/* ── Wire Protocol ───────────────────────────────────── */
+.wire-frame {
+  display: flex;
+  gap: 0;
+  margin: 20px 0;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.wire-field {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border: 1px solid var(--border);
+  margin-right: -1px;
+  min-width: 80px;
+  flex: 1;
+}
+.wire-field:first-child { border-radius: 6px 0 0 6px; }
+.wire-field:last-child  { border-radius: 0 6px 6px 0; margin-right: 0; }
+
+.wire-offset {
+  background: var(--surface2);
+  color: var(--muted);
+  font-size: 10px;
+  font-family: monospace;
+  padding: 3px 6px;
+  width: 100%;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+}
+
+.wire-bytes {
+  padding: 10px 6px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: monospace;
+  width: 100%;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wire-label {
+  background: var(--surface2);
+  color: var(--muted);
+  font-size: 10px;
+  padding: 3px 6px;
+  width: 100%;
+  text-align: center;
+  border-top: 1px solid var(--border);
+}
+
+.wf-magic   { background: rgba(239,68,68,.08);   .wire-bytes { color: var(--red); } }
+.wf-seq     { background: rgba(88,166,255,.08);  }
+.wf-sendns  { background: rgba(63,185,80,.08);   }
+.wf-plen    { background: rgba(210,153,34,.08);  }
+.wf-payload { background: rgba(188,140,255,.08); flex: 2; }
+
+.wf-magic   .wire-bytes { color: var(--red); }
+.wf-seq     .wire-bytes { color: var(--accent); }
+.wf-sendns  .wire-bytes { color: var(--green); }
+.wf-plen    .wire-bytes { color: var(--yellow); }
+.wf-payload .wire-bytes { color: var(--purple); }
+
+/* ── Protocol Table ──────────────────────────────────── */
+.protocol-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+  margin: 20px 0;
+}
+
+.protocol-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+.protocol-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--proto-color, var(--border));
+}
+.protocol-card:hover { border-color: var(--proto-color, var(--border)); }
+
+.proto-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--heading);
+  margin-bottom: 4px;
+}
+.proto-key {
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.proto-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(48,54,61,0.5);
+}
+.proto-row:last-child { border-bottom: none; }
+.proto-row span:first-child { color: var(--muted); }
+.proto-row span:last-child  { color: var(--text); font-family: monospace; font-size: 11px; text-align: right; }
+
+/* ── Factory diagram ─────────────────────────────────── */
+.factory-flow {
+  display: flex;
+  gap: 0;
+  align-items: flex-start;
+  margin: 20px 0;
+  overflow-x: auto;
+}
+
+.factory-node {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  min-width: 160px;
+  flex: 1;
+  font-size: 12px;
+}
+.factory-node h4 { font-size: 12px; color: var(--heading); margin-bottom: 6px; font-weight: 600; }
+.factory-node p  { font-size: 11px; color: var(--muted); margin: 0; }
+.factory-node code { font-size: 11px; }
+
+.factory-arrow {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  color: var(--muted);
+  font-size: 18px;
+  align-self: center;
+}
+
+/* ── Metrics Pipeline ────────────────────────────────── */
+.metrics-pipeline {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 0;
+  margin: 20px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.metric-stage {
+  padding: 16px;
+  border-right: 1px solid var(--border);
+}
+.metric-stage:last-child { border-right: none; }
+.metric-stage h4 { font-size: 12px; font-weight: 600; color: var(--heading); margin-bottom: 8px; }
+.metric-item {
+  font-size: 11px;
+  padding: 3px 0;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.metric-item::before {
+  content: '·';
+  color: var(--accent);
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* ── Trade-offs ──────────────────────────────────────── */
+.tradeoff-list { margin: 16px 0; }
+
+.tradeoff {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.tradeoff .severity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.tradeoff h4 { font-size: 13px; color: var(--heading); }
+.tradeoff .detail { font-size: 12px; color: var(--text); }
+.tradeoff .workaround { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.tradeoff .workaround strong { color: var(--green); }
+
+/* ── Combined Transport ──────────────────────────────── */
+.combined-transport {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 20px 0;
+}
+.ct-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+.ct-box h4 { font-size: 13px; color: var(--heading); margin-bottom: 10px; font-weight: 600; }
+
+/* ── Registration pattern ────────────────────────────── */
+.reg-grid {
+  display: grid;
+  grid-template-columns: 1fr 40px 1fr 40px 1fr;
+  gap: 0;
+  align-items: center;
+  margin: 20px 0;
+}
+.reg-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  font-size: 12px;
+}
+.reg-box h4 { font-size: 12px; color: var(--heading); margin-bottom: 6px; font-weight: 600; }
+.reg-arrow {
+  text-align: center;
+  color: var(--muted);
+  font-size: 20px;
+}
+
+/* ── Scroll behavior ────────────────────────────────── */
+html { scroll-behavior: smooth; }
+
+/* ── Responsive ────────────────────────────────────── */
+@media (max-width: 900px) {
+  body { flex-direction: column; }
+  nav { width: 100%; height: auto; position: static; border-right: none; border-bottom: 1px solid var(--border); display: flex; gap: 4px; padding: 8px 12px; overflow-x: auto; }
+  nav .logo { display: none; }
+  nav .section-label { display: none; }
+  nav a { white-space: nowrap; padding: 6px 12px; }
+  .section { padding: 24px 20px; }
+  .metrics-pipeline { grid-template-columns: 1fr 1fr; }
+  .reg-grid { grid-template-columns: 1fr; }
+  .reg-arrow { transform: rotate(90deg); }
+  .combined-transport { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ NAV ═══════════════ -->
+<nav>
+  <div class="logo">
+    <h2>Benchmark Lab</h2>
+    <p>Architecture Reference</p>
+  </div>
+  <div class="section-label">Structure</div>
+  <a href="#overview">System Overview</a>
+  <a href="#flow">Execution Flow</a>
+  <a href="#wire">Wire Protocol</a>
+  <div class="section-label">Components</div>
+  <a href="#factory">Factory Pattern</a>
+  <a href="#combined">Combined Transport</a>
+  <a href="#protocols">Protocol Catalog</a>
+  <div class="section-label">Internals</div>
+  <a href="#metrics">Metrics Pipeline</a>
+  <a href="#tradeoffs">Known Trade-offs</a>
+</nav>
+
+<!-- ═══════════════ MAIN ═══════════════ -->
+<main>
+
+<!-- ─── OVERVIEW ─────────────────────── -->
+<div class="section" id="overview">
+  <h1>Protocol Benchmark Platform</h1>
+  <p class="subtitle">
+    A single Go binary that measures latency, throughput, and reliability of 11 network transports
+    under identical load conditions. Server and clients run in the same process — no external infrastructure needed.
+  </p>
+
+  <h2>System Map</h2>
+
+  <div class="arch-diagram">
+
+    <div class="arch-layer">
+      <div class="arch-box highlight-blue">
+        <div class="box-title">CLI Entry Point</div>
+        <div class="box-file">cmd/benchmark-runner/</div>
+        <div class="box-detail">
+          <code>go run ./cmd/benchmark-runner run --protocol tcp --scenario A --duration 30s</code><br><br>
+          Three subcommands: <strong>run</strong> (single protocol),
+          <strong>compare</strong> (all 11 protocols), <strong>report</strong> (from Postgres).<br><br>
+          On startup, blank imports in <code>transports.go</code> trigger
+          <code>init()</code> in all 11 protocol packages → factories are registered.
+        </div>
+      </div>
+    </div>
+
+    <div class="arch-arrow">↓</div>
+
+    <div class="arch-layer">
+      <div class="arch-box highlight-purple" style="flex:2">
+        <div class="box-title">Scenario Runner</div>
+        <div class="box-file">internal/scenarios/runner.go</div>
+        <div class="box-detail">
+          Orchestrates one complete benchmark run.<br>
+          1. Injects <code>RecvHandler</code> into <code>ScenarioConfig</code><br>
+          2. Looks up <code>factories["tcp"]</code> → calls factory<br>
+          3. Runs warmup phase (metrics discarded)<br>
+          4. Runs measurement phase → <code>broadcastLoop()</code><br>
+          5. Calls <code>recorder.Snapshot()</code> → <code>RunResult</code>
+        </div>
+      </div>
+      <div class="arch-box" style="flex:1">
+        <div class="box-title">Factories Map</div>
+        <div class="box-file">internal/scenarios/runner.go:45</div>
+        <div class="box-detail">
+          <code>var factories = map[string]TransportFactory{}</code><br><br>
+          Populated at startup via <code>Register(name, fn)</code>.
+          Each <code>register.go</code> calls this in <code>init()</code>.<br><br>
+          11 entries: <code>"tcp"</code>, <code>"udp"</code>,
+          <code>"http1"</code> … <code>"webrtc"</code>
+        </div>
+      </div>
+    </div>
+
+    <div class="arch-arrow">↓ factory(cfg, logger) creates...</div>
+
+    <div class="arch-layer">
+      <div class="arch-box highlight-green" style="flex:1">
+        <div class="box-title">Combined Transport</div>
+        <div class="box-file">internal/*/register.go</div>
+        <div class="box-detail">
+          Each factory creates a struct that embeds <em>both</em> a server and N clients.<br><br>
+          <strong>Start()</strong> → start server → connect N clients → <code>waitForConns()</code><br>
+          <strong>Broadcast(data)</strong> → delegates to inner server<br>
+          <strong>Stop()</strong> → close clients → stop server
+        </div>
+      </div>
+      <div class="arch-box" style="flex:1">
+        <div class="box-title">Server (e.g. TCPServer)</div>
+        <div class="box-file">internal/tcp/server.go</div>
+        <div class="box-detail">
+          <strong>Broadcast(data)</strong>:<br>
+          1. <code>seq := seqCounter.Add(1)</code><br>
+          2. <code>frame := wire.Encode(seq, sendNs, data)</code><br>
+          3. enqueue <code>frame</code> into N clients' write channels
+        </div>
+      </div>
+      <div class="arch-box" style="flex:1">
+        <div class="box-title">N Clients (e.g. TCPClient)</div>
+        <div class="box-file">internal/tcp/client.go</div>
+        <div class="box-detail">
+          Each client's <code>readPump</code> calls:<br><br>
+          <code>cfg.RecvHandler(id, wireFrame, recvAt)</code><br><br>
+          The handler was injected by the runner. It calls
+          <code>recorder.RecordRecv(seq, sendNs, size, recvNs)</code>.
+        </div>
+      </div>
+    </div>
+
+    <div class="arch-arrow">↓ metrics flow upward</div>
+
+    <div class="arch-layer">
+      <div class="arch-box highlight-orange">
+        <div class="box-title">Recorder</div>
+        <div class="box-file">pkg/metrics/recorder.go</div>
+        <div class="box-detail">
+          One per benchmark run. Thread-safe, hot-path optimised (~100ns per call).<br><br>
+          <strong>RecordSend(seq, size)</strong> → atomic counters only<br>
+          <strong>RecordRecv(seq, sendNs, size, recvNs)</strong> → HDR histogram + SeqTracker + atomics<br>
+          <strong>ResourceSampler</strong> → CPU/mem/goroutines every 100ms (background)<br>
+          <strong>Snapshot()</strong> → <code>RunResult</code> with all percentiles
+        </div>
+      </div>
+    </div>
+
+    <div class="arch-arrow">↓</div>
+
+    <div class="arch-layer">
+      <div class="arch-box">
+        <div class="box-title">Output / Storage</div>
+        <div class="box-file">pkg/reporter/ &nbsp; pkg/collector/</div>
+        <div class="box-detail">
+          <strong>JSON</strong>: stdout, pipe to file<br>
+          <strong>Markdown</strong>: comparison tables<br>
+          <strong>HTML</strong>: standalone report<br>
+          <strong>Postgres</strong>: <code>--store-postgres DSN</code> → benchmark_runs + benchmark_stats tables<br>
+          <strong>result-collector</strong>: HTTP daemon for distributed runs
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ─── FLOW ──────────────────────────── -->
+<div class="section" id="flow">
+  <h2>Execution Flow — Step by Step</h2>
+  <p>Exactly what happens when you run <code>go run ./cmd/benchmark-runner run --protocol tcp --scenario A</code></p>
+
+  <div class="flow-steps">
+
+    <div class="flow-step">
+      <div class="step-num">1</div>
+      <div class="step-content">
+        <h4>Blank imports fire init() for all protocols</h4>
+        <p>Before main() runs, Go executes each imported package's <code>init()</code>. All 11 protocol packages are imported in <code>cmd/benchmark-runner/transports.go</code>.</p>
+<pre><span style="color:#8b949e">// cmd/benchmark-runner/transports.go</span>
+import (
+    _ <span style="color:#a5d6ff">"github.com/.../internal/tcp"</span>     <span style="color:#8b949e">// init() → scenarios.Register("tcp", factory)</span>
+    _ <span style="color:#a5d6ff">"github.com/.../internal/udp"</span>     <span style="color:#8b949e">// init() → scenarios.Register("udp", factory)</span>
+    _ <span style="color:#a5d6ff">"github.com/.../internal/http1"</span>
+    <span style="color:#8b949e">// ... 8 more</span>
+)</pre>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="step-num">2</div>
+      <div class="step-content">
+        <h4>cobra parses flags → runCmd() creates ScenarioConfig</h4>
+        <p>Flag values (<code>--protocol tcp</code>, <code>--receivers 10</code>, etc.) populate a <code>ScenarioConfig</code> struct, which is passed to <code>NewRunner()</code>.</p>
+<pre>cfg := scenarios.ScenarioConfig{
+    Protocol:      <span style="color:#a5d6ff">"tcp"</span>,
+    Scenario:      <span style="color:#a5d6ff">"A"</span>,
+    Duration:      30 * time.Second,
+    ReceiverCount: 10,
+    MsgSize:       1024,
+    <span style="color:#8b949e">// ... RecvHandler is set in Step 3</span>
+}</pre>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="step-num">3</div>
+      <div class="step-content">
+        <h4>Runner injects RecvHandler into config</h4>
+        <p>Before looking up the factory, the runner injects its own callback. This is how client-side receives get routed back into the runner's recorder — the factory passes it to every client it creates.</p>
+<pre><span style="color:#8b949e">// internal/scenarios/runner.go:Run()</span>
+r.cfg.RecvHandler = func(_ ConnID, data []byte, recvAt time.Time) {
+    seq, sendNs, _, err := wire.DecodeHeader(data)
+    if err != nil { return }
+    r.recorder.RecordRecv(seq, sendNs, len(data), recvAt.UnixNano())
+}</pre>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="step-num">4</div>
+      <div class="step-content">
+        <h4>Factory creates Combined Transport</h4>
+        <p>The factory looks up <code>factories["tcp"]</code> and calls it. The factory creates a wrapper struct holding both a server and a slice for N clients.</p>
+<pre><span style="color:#8b949e">// internal/tcp/register.go</span>
+scenarios.Register(<span style="color:#a5d6ff">"tcp"</span>, func(cfg ScenarioConfig, log *zap.Logger) (transport.Transport, error) {
+    addr := fmt.Sprintf(<span style="color:#a5d6ff">"%s:%d"</span>, cfg.ServerAddr, cfg.ServerPort)
+    srv := NewTCPServer(addr, ...)
+    return &tcpBenchTransport{server: srv, cfg: cfg}, nil
+})</pre>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="step-num">5</div>
+      <div class="step-content">
+        <h4>CombinedTransport.Start() — server binds, clients connect, wait for all</h4>
+        <p>The server starts and binds the port. N clients dial in. <code>waitForConns()</code> polls <code>server.Connections()</code> until all N are visible in the server's registry (critical for async protocols like HTTP/1, HTTP/2, SSE, HTTP/3).</p>
+<pre>srv.Start()           <span style="color:#8b949e">// binds port 9000</span>
+for i := 0; i &lt; N; i++ {
+    c := NewTCPClient(WithRecvHandler(cfg.RecvHandler))
+    c.Dial(addr)
+    clients = append(clients, c)
+}
+waitForConns(srv, N)  <span style="color:#8b949e">// polls srv.Connections() ≥ N, timeout 10s</span></pre>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="step-num">6</div>
+      <div class="step-content">
+        <h4>broadcastLoop — warmup then measurement</h4>
+        <p>The runner drives a tight loop: generate → broadcast → record send. After the warmup duration the recorder is reset. Only the measurement phase data is kept.</p>
+<pre><span style="color:#8b949e">// Runs for WarmupDuration (discarded), then Duration (measured)</span>
+for {
+    data := gen()                 <span style="color:#8b949e">// e.g. 1024 random bytes</span>
+    srv.Broadcast(data)           <span style="color:#8b949e">// server wire-encodes + fans out</span>
+    n := sent.Add(1)
+    if !warmup { recorder.RecordSend(n, len(data)) }
+}</pre>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="step-num">7</div>
+      <div class="step-content">
+        <h4>Server wire-encodes and fans out to N clients</h4>
+        <p>Every server's <code>Broadcast()</code> creates a single wire frame (once, not per-client) and enqueues it to all client write channels. The timestamp <code>SendNs</code> embedded in the frame is what enables latency measurement.</p>
+<pre><span style="color:#8b949e">// internal/tcp/server.go  (same pattern in all 11 servers)</span>
+func (s *TCPServer) Broadcast(data []byte) error {
+    seq   := s.seqCounter.Add(1)
+    frame := wire.Encode(seq, time.Now().UnixNano(), data)  <span style="color:#8b949e">// 24B header + data</span>
+    sized := prependLength(frame)                           <span style="color:#8b949e">// 4B len + frame</span>
+    for _, peer := range s.registry.Snapshot() {
+        peer.writeCh &lt;- sized                              <span style="color:#8b949e">// non-blocking, drops if full</span>
+    }
+    return nil
+}</pre>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="step-num">8</div>
+      <div class="step-content">
+        <h4>Client readPump → RecvHandler → Recorder</h4>
+        <p>Each client's background goroutine reads the wire frame, calls the injected handler. The handler extracts <code>SeqNum</code> and <code>SendNs</code> from the wire header to compute latency = <code>recvNs - sendNs</code>.</p>
+<pre><span style="color:#8b949e">// handler injected in Step 3</span>
+func(id ConnID, wireFrame []byte, recvAt time.Time) {
+    seq, sendNs, _, _ := wire.DecodeHeader(wireFrame)
+    <span style="color:#8b949e">// latency = recvAt.UnixNano() - sendNs  (same-machine clock, no NTP needed)</span>
+    recorder.RecordRecv(seq, sendNs, len(wireFrame), recvAt.UnixNano())
+}</pre>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="step-num">9</div>
+      <div class="step-content">
+        <h4>Snapshot → RunResult → output</h4>
+        <p>After the measurement phase, the recorder computes percentiles from the HDR histogram, finalises loss/reorder from the sequence tracker, and aggregates resource usage. The result is serialised to JSON, Markdown, or HTML.</p>
+<pre>snap    := recorder.Snapshot()    <span style="color:#8b949e">// latency P50/P99/P999, MsgPerSec, CPU, mem…</span>
+stats   := srv.Stats()            <span style="color:#8b949e">// lost (write-channel overflow)</span>
+result  := &collector.RunResult{
+    LatP99Ns:  snap.Latency.P99.Nanoseconds(),
+    MsgsPerSec: snap.MsgPerSec,
+    LossRatePct: float64(stats.Lost) / float64(snap.MsgSent) * 100,
+    <span style="color:#8b949e">// ...</span>
+}</pre>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ─── WIRE PROTOCOL ─────────────────── -->
+<div class="section" id="wire">
+  <h2>Wire Protocol — 24-Byte Frame</h2>
+  <p>Every benchmark message, regardless of transport, is prefixed with a fixed 24-byte little-endian header. This enables cross-protocol latency measurement, sequence-based loss/reorder detection, and message correlation between sender and receiver.</p>
+
+  <div class="wire-frame">
+    <div class="wire-field wf-magic">
+      <div class="wire-offset">0 – 3</div>
+      <div class="wire-bytes">0xBEEFCAFE</div>
+      <div class="wire-label">Magic uint32</div>
+    </div>
+    <div class="wire-field wf-seq">
+      <div class="wire-offset">4 – 11</div>
+      <div class="wire-bytes">SeqNum</div>
+      <div class="wire-label">uint64 LE</div>
+    </div>
+    <div class="wire-field wf-sendns">
+      <div class="wire-offset">12 – 19</div>
+      <div class="wire-bytes">SendNs</div>
+      <div class="wire-label">int64 LE</div>
+    </div>
+    <div class="wire-field wf-plen">
+      <div class="wire-offset">20 – 23</div>
+      <div class="wire-bytes">PayloadLen</div>
+      <div class="wire-label">uint32 LE</div>
+    </div>
+    <div class="wire-field wf-payload" style="flex:2">
+      <div class="wire-offset">24 – N</div>
+      <div class="wire-bytes">Payload (raw generator bytes)</div>
+      <div class="wire-label">[]byte, PayloadLen bytes</div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
+    <div>
+      <h3>Field meanings</h3>
+      <div class="proto-row"><span style="color:var(--red)">Magic (0xBEEFCAFE)</span><span>Frame boundary marker. Validated on decode — fails fast on misalignment.</span></div>
+      <div class="proto-row"><span style="color:var(--accent)">SeqNum</span><span>Per-server monotonic counter. Used by SeqTracker to detect loss, reorder, duplicates.</span></div>
+      <div class="proto-row"><span style="color:var(--green)">SendNs</span><span><code>time.Now().UnixNano()</code> at broadcast time. Latency = recvNs − sendNs. No NTP needed (same machine).</span></div>
+      <div class="proto-row"><span style="color:var(--yellow)">PayloadLen</span><span>Byte count of payload. Bounds-checks the decode without reading payload.</span></div>
+      <div class="proto-row"><span style="color:var(--purple)">Payload</span><span>Raw bytes from generator (random / sequential / JSON / binary / market tick).</span></div>
+    </div>
+    <div>
+      <h3>Framing per protocol</h3>
+      <div class="proto-row"><span>TCP / HTTP/1 / HTTP/2</span><span>[4B len][24B hdr + payload]</span></div>
+      <div class="proto-row"><span>UDP</span><span>[24B hdr + payload] (one datagram)</span></div>
+      <div class="proto-row"><span>WebSocket (3 variants)</span><span>WS binary frame [24B hdr + payload]</span></div>
+      <div class="proto-row"><span>HTTP/3 stream mode</span><span>[4B len][24B hdr + payload] over QUIC</span></div>
+      <div class="proto-row"><span>HTTP/3 datagram/unistream</span><span>[24B hdr + payload] direct</span></div>
+      <div class="proto-row"><span>SSE</span><span>base64([24B hdr + payload]) as SSE data: field</span></div>
+      <div class="proto-row"><span>WebTransport</span><span>[24B hdr + payload] via QUIC stream/datagram</span></div>
+      <div class="proto-row"><span>WebRTC</span><span>[24B hdr + payload] via DataChannel</span></div>
+    </div>
+  </div>
+
+  <p style="margin-top:16px">Encoding/decoding is in <code>pkg/wire/frame.go</code>. Little-endian throughout (no byte-swap on x86/ARM). The encode buffer is pool-recycled via <code>sync.Pool</code> to minimise GC in the broadcast hot path.</p>
+</div>
+
+<!-- ─── FACTORY PATTERN ───────────────── -->
+<div class="section" id="factory">
+  <h2>Factory Registration Pattern</h2>
+  <p>The benchmark runner is protocol-agnostic. Protocols self-register by calling <code>scenarios.Register()</code> from <code>init()</code>. The runner never imports any protocol package directly — it imports them all as blank imports to trigger registration.</p>
+
+  <div class="reg-grid">
+    <div class="reg-box">
+      <h4>1 · Blank import</h4>
+      <p style="font-size:11px;color:var(--muted);margin-top:4px">cmd/benchmark-runner/transports.go</p>
+      <pre style="margin-top:8px">import (
+  _ ".../internal/tcp"
+  _ ".../internal/udp"
+  _ ".../internal/http1"
+  <span style="color:var(--muted)">// 8 more...</span>
+)</pre>
+      <p style="font-size:11px;color:var(--muted);margin-top:6px">Go guarantees all init() functions run before main(). The blank import forces the package to load without using any exported names.</p>
+    </div>
+    <div class="reg-arrow">→</div>
+    <div class="reg-box">
+      <h4>2 · init() calls Register</h4>
+      <p style="font-size:11px;color:var(--muted);margin-top:4px">internal/tcp/register.go</p>
+      <pre style="margin-top:8px">func init() {
+  scenarios.Register(<span style="color:var(--accent)">"tcp"</span>,
+    func(cfg ScenarioConfig,
+         log *zap.Logger,
+    ) (transport.Transport, error) {
+      srv := NewTCPServer(addr)
+      return &tcpBenchTransport{
+        server: srv, cfg: cfg,
+      }, nil
+    })
+}</pre>
+    </div>
+    <div class="reg-arrow">→</div>
+    <div class="reg-box">
+      <h4>3 · Runner looks up at runtime</h4>
+      <p style="font-size:11px;color:var(--muted);margin-top:4px">internal/scenarios/runner.go</p>
+      <pre style="margin-top:8px">factory, ok := factories[r.cfg.Protocol]
+if !ok {
+  return nil, fmt.Errorf(
+    "unknown protocol %q",
+    r.cfg.Protocol,
+  )
+}
+
+srv, err := factory(r.cfg, r.logger)
+srv.Start()
+<span style="color:var(--muted)">// → broadcastLoop...</span></pre>
+    </div>
+  </div>
+
+  <h3 style="margin-top:24px">TransportFactory signature</h3>
+<pre><span style="color:var(--muted)">// internal/scenarios/runner.go</span>
+type TransportFactory func(
+    cfg    ScenarioConfig,   <span style="color:var(--muted)">// ReceiverCount, RecvHandler, ServerAddr, etc.</span>
+    logger *zap.Logger,
+) (transport.Transport, error)
+
+<span style="color:var(--muted)">// transport.Transport interface (pkg/transport/interface.go)</span>
+type Transport interface {
+    Start()       error
+    Stop()        error
+    Broadcast(data []byte) error
+    Send(id ConnID, data []byte) error
+    Connections() int
+    Stats()        Stats
+}</pre>
+</div>
+
+<!-- ─── COMBINED TRANSPORT ────────────── -->
+<div class="section" id="combined">
+  <h2>Combined Transport — Server + Embedded Clients</h2>
+  <p>Each factory creates a <em>combined transport</em>: a struct that owns both a server instance and a slice of client instances. This lets the benchmark runner measure end-to-end performance without launching separate processes.</p>
+
+  <div class="combined-transport">
+    <div class="ct-box">
+      <h4>Lifecycle</h4>
+<pre>Start() {
+    server.Start()
+    <span style="color:var(--muted)">// HTTP servers: 20ms grace for listen goroutine</span>
+    time.Sleep(20ms)
+
+    for i := 0; i &lt; ReceiverCount; i++ {
+        c := NewClient(RecvHandler: cfg.RecvHandler)
+        c.Connect(ctx)  <span style="color:var(--muted)">// blocking for most protocols</span>
+        clients = append(clients, c)
+    }
+
+    <span style="color:var(--muted)">// Wait until server sees all connections.
+    // Critical for HTTP/1, HTTP/2, SSE, HTTP/3
+    // where stream registration is async.</span>
+    waitForConns(server, ReceiverCount)
+}
+
+Stop() {
+    for _, c := range clients { c.Close() }
+    server.Stop()
+}
+
+Broadcast(data) → server.Broadcast(data)</pre>
+    </div>
+    <div class="ct-box">
+      <h4>RecvHandler injection</h4>
+      <p style="font-size:12px">This is the key wiring that makes metrics work. The runner injects a callback <em>before</em> calling the factory. The factory stores it in each client. When clients receive a wire frame, they call the handler, which routes the measurement back into the runner's recorder.</p>
+<pre><span style="color:var(--muted)">// Runner injects (runner.go)</span>
+cfg.RecvHandler = func(id, data, recvAt) {
+    seq, sendNs, _, err := wire.DecodeHeader(data)
+    if err == nil {
+        recorder.RecordRecv(seq, sendNs,
+            len(data), recvAt.UnixNano())
+    }
+}
+
+<span style="color:var(--muted)">// Factory wires it into each client (register.go)</span>
+c := NewTCPClient(
+    WithRecvHandler(cfg.RecvHandler), <span style="color:var(--muted)">// ← the same fn</span>
+)
+</pre>
+      <h4 style="margin-top:16px">waitForConns</h4>
+      <p style="font-size:12px">Replaces guessed fixed sleeps. Polls <code>server.Connections()</code> every 10ms until count is reached or 10–15s timeout. Prevents broadcasts from starting before clients are fully registered — especially important for SSE (stream goroutine is async) and HTTP/3 (<code>Start()</code> is fully non-blocking).</p>
+    </div>
+  </div>
+</div>
+
+<!-- ─── PROTOCOLS ─────────────────────── -->
+<div class="section" id="protocols">
+  <h2>Protocol Catalog</h2>
+  <p>All 11 transports registered in the factory map. Every server's <code>Broadcast()</code> calls <code>wire.Encode(seq, sendNs, data)</code> — the wire frame is created once per broadcast, not once per connection.</p>
+
+  <div class="protocol-grid">
+
+    <div class="protocol-card" style="--proto-color:var(--p-udp)">
+      <div class="proto-name">UDP</div>
+      <div class="proto-key">--protocol udp</div>
+      <div class="proto-row"><span>Transport</span><span>UDP datagram</span></div>
+      <div class="proto-row"><span>Framing</span><span>None (one frame = one datagram)</span></div>
+      <div class="proto-row"><span>Reliable</span><span>❌ best-effort</span></div>
+      <div class="proto-row"><span>Multi-listener</span><span>Linux: SO_REUSEPORT × NumCPU; else 1</span></div>
+      <div class="proto-row"><span>Batch ops</span><span>Linux: recvmmsg/sendmmsg; else loop</span></div>
+      <div class="proto-row"><span>Windows</span><span>✅ (1 listener, no batch)</span></div>
+      <div class="proto-row"><span>Best for</span><span>Lowest latency baseline</span></div>
+    </div>
+
+    <div class="protocol-card" style="--proto-color:var(--p-tcp)">
+      <div class="proto-name">TCP</div>
+      <div class="proto-key">--protocol tcp</div>
+      <div class="proto-row"><span>Transport</span><span>TCP stream</span></div>
+      <div class="proto-row"><span>Framing</span><span>[4B big-endian len][wire frame]</span></div>
+      <div class="proto-row"><span>Reliable</span><span>✅ ordered delivery</span></div>
+      <div class="proto-row"><span>Multi-listener</span><span>Linux: SO_REUSEPORT × min(CPU,4); else 1</span></div>
+      <div class="proto-row"><span>Nagle</span><span>Disabled (TCP_NODELAY)</span></div>
+      <div class="proto-row"><span>Windows</span><span>✅ (single listener)</span></div>
+      <div class="proto-row"><span>Best for</span><span>Reliable real-time streams</span></div>
+    </div>
+
+    <div class="protocol-card" style="--proto-color:var(--p-h1)">
+      <div class="proto-name">HTTP/1.1 Chunked</div>
+      <div class="proto-key">--protocol http1</div>
+      <div class="proto-row"><span>Transport</span><span>HTTP/1.1 long-poll</span></div>
+      <div class="proto-row"><span>Framing</span><span>GET /stream → [4B len][wire frame]</span></div>
+      <div class="proto-row"><span>Register</span><span>POST /register → ConnID</span></div>
+      <div class="proto-row"><span>Flush</span><span>ResponseWriter.Flush() per message</span></div>
+      <div class="proto-row"><span>Async connect</span><span>⚠️ stream goroutine starts after Connect()</span></div>
+      <div class="proto-row"><span>Windows</span><span>✅</span></div>
+    </div>
+
+    <div class="protocol-card" style="--proto-color:var(--p-h2)">
+      <div class="proto-name">HTTP/2 (h2c)</div>
+      <div class="proto-key">--protocol http2</div>
+      <div class="proto-row"><span>Transport</span><span>HTTP/2 stream multiplexing</span></div>
+      <div class="proto-row"><span>TLS</span><span>None — plain h2c via Go 1.25 Protocols API</span></div>
+      <div class="proto-row"><span>Framing</span><span>Same as HTTP/1.1 (4B len + wire frame)</span></div>
+      <div class="proto-row"><span>Async connect</span><span>⚠️ stream goroutine starts after Connect()</span></div>
+      <div class="proto-row"><span>Multiplexing</span><span>N subscribers share 1 TCP conn</span></div>
+      <div class="proto-row"><span>Windows</span><span>✅</span></div>
+    </div>
+
+    <div class="protocol-card" style="--proto-color:var(--p-h3)">
+      <div class="proto-name">HTTP/3 (QUIC)</div>
+      <div class="proto-key">--protocol http3</div>
+      <div class="proto-row"><span>Transport</span><span>QUIC (UDP-based)</span></div>
+      <div class="proto-row"><span>TLS</span><span>Self-signed cert (internal/tls)</span></div>
+      <div class="proto-row"><span>Modes</span><span>stream / unidirstream / datagram</span></div>
+      <div class="proto-row"><span>Async connect</span><span>⚠️ Start() is fully async (connectLoop)</span></div>
+      <div class="proto-row"><span>waitForConns timeout</span><span>15s (QUIC handshake)</span></div>
+      <div class="proto-row"><span>Windows</span><span>⚠️ limited (QUIC kernel support)</span></div>
+    </div>
+
+    <div class="protocol-card" style="--proto-color:var(--p-sse)">
+      <div class="proto-name">Server-Sent Events</div>
+      <div class="proto-key">--protocol sse</div>
+      <div class="proto-row"><span>Transport</span><span>HTTP/1.1 text/event-stream</span></div>
+      <div class="proto-row"><span>Encoding</span><span>base64(wire frame) as SSE data: field</span></div>
+      <div class="proto-row"><span>Replay</span><span>Last-Event-ID reconnect (1000-event buffer)</span></div>
+      <div class="proto-row"><span>Async connect</span><span>⚠️ SSE stream goroutine starts after Connect()</span></div>
+      <div class="proto-row"><span>Client seq</span><span>SSEClient calls wire.Decode() on each event</span></div>
+      <div class="proto-row"><span>Windows</span><span>✅</span></div>
+    </div>
+
+    <div class="protocol-card" style="--proto-color:var(--p-ws)">
+      <div class="proto-name">WebSocket — Gorilla</div>
+      <div class="proto-key">--protocol websocket-gorilla</div>
+      <div class="proto-row"><span>Library</span><span>gorilla/websocket</span></div>
+      <div class="proto-row"><span>Framing</span><span>WS binary message [wire frame]</span></div>
+      <div class="proto-row"><span>Keepalive</span><span>Ping every 30s, pong handler</span></div>
+      <div class="proto-row"><span>Reconnect</span><span>Exponential backoff (client)</span></div>
+      <div class="proto-row"><span>Windows</span><span>✅</span></div>
+      <div class="proto-row"><span>Best for</span><span>Standard WS baseline</span></div>
+    </div>
+
+    <div class="protocol-card" style="--proto-color:var(--p-ws)">
+      <div class="proto-name">WebSocket — Gobwas</div>
+      <div class="proto-key">--protocol websocket-gobwas</div>
+      <div class="proto-row"><span>Library</span><span>gobwas/ws (zero-alloc)</span></div>
+      <div class="proto-row"><span>I/O</span><span>Raw net.Conn, manual frame read/write</span></div>
+      <div class="proto-row"><span>Write</span><span>Per-conn mutex serialises concurrent writes</span></div>
+      <div class="proto-row"><span>Reconnect</span><span>Exponential backoff (client)</span></div>
+      <div class="proto-row"><span>Windows</span><span>✅</span></div>
+      <div class="proto-row"><span>Best for</span><span>Low-allocation WS comparison</span></div>
+    </div>
+
+    <div class="protocol-card" style="--proto-color:var(--p-ws)">
+      <div class="proto-name">WebSocket — Coder</div>
+      <div class="proto-key">--protocol websocket-coder</div>
+      <div class="proto-row"><span>Library</span><span>coder/websocket (context-aware)</span></div>
+      <div class="proto-row"><span>Compression</span><span>Disabled (removes per-msg alloc)</span></div>
+      <div class="proto-row"><span>Shutdown</span><span>Context cancellation (no explicit close)</span></div>
+      <div class="proto-row"><span>Windows</span><span>✅</span></div>
+      <div class="proto-row"><span>Best for</span><span>Cloud-native WS comparison</span></div>
+    </div>
+
+    <div class="protocol-card" style="--proto-color:var(--p-wt)">
+      <div class="proto-name">WebTransport</div>
+      <div class="proto-key">--protocol webtransport</div>
+      <div class="proto-row"><span>Transport</span><span>HTTP/3 + QUIC</span></div>
+      <div class="proto-row"><span>Library</span><span>quic-go/webtransport-go</span></div>
+      <div class="proto-row"><span>Modes</span><span>unidirstream / bidistream / datagram</span></div>
+      <div class="proto-row"><span>TLS</span><span>Self-signed cert (required by QUIC)</span></div>
+      <div class="proto-row"><span>waitForConns timeout</span><span>15s</span></div>
+      <div class="proto-row"><span>Windows</span><span>⚠️ limited</span></div>
+    </div>
+
+    <div class="protocol-card" style="--proto-color:var(--p-rtc)">
+      <div class="proto-name">WebRTC</div>
+      <div class="proto-key">--protocol webrtc</div>
+      <div class="proto-row"><span>Transport</span><span>DTLS + SCTP DataChannel</span></div>
+      <div class="proto-row"><span>Library</span><span>pion/webrtc v3</span></div>
+      <div class="proto-row"><span>Signaling</span><span>Built-in HTTP server (POST /webrtc/offer)</span></div>
+      <div class="proto-row"><span>ICE</span><span>Uses Google STUN; local = loopback candidates</span></div>
+      <div class="proto-row"><span>Connect blocks</span><span>✅ waits for dc.OnOpen (ready channel)</span></div>
+      <div class="proto-row"><span>Windows</span><span>⚠️ limited</span></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ─── METRICS ───────────────────────── -->
+<div class="section" id="metrics">
+  <h2>Metrics Pipeline</h2>
+  <p>One <code>Recorder</code> per benchmark run. All methods are goroutine-safe. The hot path (RecordRecv) costs ~100ns worst-case, so even at 10M msg/s the overhead is 1%.</p>
+
+  <div class="metrics-pipeline">
+    <div class="metric-stage" style="background:rgba(88,166,255,.04)">
+      <h4 style="color:var(--accent)">Input</h4>
+      <div class="metric-item">RecordSend(seq, size)</div>
+      <div class="metric-item">RecordRecv(seq, sendNs, size, recvNs)</div>
+      <div class="metric-item">ResourceSampler (100ms ticker)</div>
+      <div class="metric-item">RecordHandshake(duration)</div>
+      <div class="metric-item">RecordReconnect(duration)</div>
+    </div>
+    <div class="metric-stage" style="background:rgba(63,185,80,.04)">
+      <h4 style="color:var(--green)">Storage</h4>
+      <div class="metric-item">atomic.Uint64: msgSent, msgRecv, bytesSent, bytesRecv</div>
+      <div class="metric-item">HDR Histogram: latency (1ns–10s range, 3 sig-fig)</div>
+      <div class="metric-item">HDR Histogram: handshake, reconnect</div>
+      <div class="metric-item">SequenceTracker: window-based loss/reorder</div>
+      <div class="metric-item">ResourceSampler: CPU%, mem, goroutines, FDs</div>
+    </div>
+    <div class="metric-stage" style="background:rgba(210,153,34,.04)">
+      <h4 style="color:var(--yellow)">Snapshot()</h4>
+      <div class="metric-item">Latency: Min/Mean/P50/P95/P99/P999/Max/StdDev</div>
+      <div class="metric-item">Throughput: MsgPerSec, BytesPerSec</div>
+      <div class="metric-item">Reliability: Lost, Reordered, Duplicated</div>
+      <div class="metric-item">Resources: CPUAvg, CPUP99, MemAvg, MemMax</div>
+      <div class="metric-item">Lifecycle: HandshakeP99, ReconnectP99</div>
+    </div>
+    <div class="metric-stage" style="background:rgba(188,140,255,.04)">
+      <h4 style="color:var(--purple)">RunResult</h4>
+      <div class="metric-item">JSON: stdout / file</div>
+      <div class="metric-item">Markdown: comparison table</div>
+      <div class="metric-item">HTML: standalone report</div>
+      <div class="metric-item">Postgres: benchmark_runs + benchmark_stats</div>
+      <div class="metric-item">Prometheus: live scrape during run</div>
+    </div>
+  </div>
+
+  <h3 style="margin-top:24px">Sequence Tracker — Loss Detection</h3>
+  <p>The <code>SequenceTracker</code> uses a sliding-window bitmap (default 4096 entries). On each <code>RecordRecv(seq)</code> it marks the sequence number seen. <code>Flush(lastSentSeq)</code> at end-of-run counts unmarked positions as lost.</p>
+
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;margin:12px 0">
+    <h4 style="color:var(--yellow);font-size:12px;margin-bottom:8px">⚠ Combined Transport Limitation</h4>
+    <p style="font-size:12px">When running with <code>--receivers N</code>, all N clients share the <em>same</em> recorder. The server broadcasts seq=42 to all N clients; all N call <code>RecordRecv(42)</code>. The SeqTracker sees seq=42 N times → reports N−1 duplicates per message.</p>
+    <p style="font-size:12px;margin-top:6px"><strong style="color:var(--green)">What is still accurate:</strong> Latency (HDR histogram records each receive timestamp independently). <strong style="color:var(--red)">What is inflated:</strong> MsgPerSec (= N × actual per-receiver rate), Duplicated count. Divide <code>MsgsPerSec</code> by <code>ReceiverCount</code> for per-receiver throughput.</p>
+  </div>
+</div>
+
+<!-- ─── TRADE-OFFS ────────────────────── -->
+<div class="section" id="tradeoffs">
+  <h2>Known Trade-offs &amp; Limitations</h2>
+
+  <div class="tradeoff-list">
+
+    <div class="tradeoff">
+      <div class="severity">
+        <span class="badge badge-green">Fixed</span>
+        <h4>TCP multi-listener crash on Windows</h4>
+      </div>
+      <div class="detail"><code>SO_REUSEPORT</code> is Linux-only. Without it, binding N listeners to the same port fails on the 2nd call (WSAEADDRINUSE). Fixed: <code>if runtime.GOOS != "linux" { n = 1 }</code> in <code>TCPServer.Start()</code>. Single listener is used on Windows/macOS.</div>
+    </div>
+
+    <div class="tradeoff">
+      <div class="severity">
+        <span class="badge badge-green">Fixed</span>
+        <h4>Async stream registration race (HTTP/1, HTTP/2, SSE, HTTP/3)</h4>
+      </div>
+      <div class="detail">HTTP/1, HTTP/2, SSE clients start their stream goroutine asynchronously — the server-side handler fires after <code>Connect()</code> returns. HTTP/3 <code>Start()</code> is fully async. Old code used guessed fixed sleeps. Fixed: <code>waitForConns(server, N)</code> polls <code>Connections()</code> every 10ms with 10–15s timeout, guaranteeing broadcasts only start after all clients are registered.</div>
+    </div>
+
+    <div class="tradeoff">
+      <div class="severity">
+        <span class="badge badge-green">Fixed</span>
+        <h4>Wire encoding inconsistency (8 servers)</h4>
+      </div>
+      <div class="detail">HTTP/3 and TCP/UDP already called <code>wire.Encode()</code> in <code>Broadcast()</code>. The other 8 servers (HTTP/1, HTTP/2, SSE, WebSocket×3, WebRTC, WebTransport) sent raw generator bytes. Fixed: all 8 servers now call <code>wire.Encode(seqCounter.Add(1), time.Now().UnixNano(), data)</code> before sending, enabling latency measurement for all 11 protocols.</div>
+    </div>
+
+    <div class="tradeoff">
+      <div class="severity">
+        <span class="badge badge-yellow">Architectural</span>
+        <h4>N-receiver seq inflation in combined transport</h4>
+      </div>
+      <div class="detail">All N embedded clients share one recorder. Every broadcast's seq number is recorded N times → (N−1)×MsgCount duplicates counted; SeqTracker loss detection unreliable. <code>MsgPerSec</code> is aggregate (N× actual per-receiver rate).</div>
+      <div class="workaround"><strong>Workaround:</strong> For accurate per-receiver metrics, use standalone <code>cmd/xxx-server</code> + multiple <code>cmd/xxx-client</code> processes. For throughput comparison, divide <code>MsgsPerSec</code> by <code>--receivers</code>. For latency comparison, the HDR histogram is correct regardless.</div>
+    </div>
+
+    <div class="tradeoff">
+      <div class="severity">
+        <span class="badge badge-yellow">Known</span>
+        <h4>benchmark.yaml config not wired to cobra flags</h4>
+      </div>
+      <div class="detail">Viper reads <code>benchmark.yaml</code> at startup but <code>viper.BindPFlag()</code> is never called. Flag defaults are not populated from the YAML. The file is effectively documentation-only at this point.</div>
+      <div class="workaround"><strong>Workaround:</strong> Pass all parameters explicitly as CLI flags. The YAML serves as a configuration template showing available options.</div>
+    </div>
+
+    <div class="tradeoff">
+      <div class="severity">
+        <span class="badge badge-yellow">Known</span>
+        <h4>WebRTC uses Google STUN server</h4>
+      </div>
+      <div class="detail"><code>WebRTCClient.Connect()</code> includes <code>stun:stun.l.google.com:19302</code> in the ICE configuration. On machines without internet access, ICE gathering still produces loopback candidates (works locally) but may time out waiting for STUN reflexive candidates. The 15s <code>waitForConns</code> timeout accommodates this.</div>
+    </div>
+
+    <div class="tradeoff">
+      <div class="severity">
+        <span class="badge badge-red">Not implemented</span>
+        <h4>Scenario logic (A–E)</h4>
+      </div>
+      <div class="detail">Scenarios A–D are thin wrappers that set <code>ReceiverCount</code> and call <code>NewRunner(cfg).Run(ctx)</code>. They don't implement the different subscriber behaviour described in their comments (e.g. Scenario B: 100 subscribers each subscribing to a 10-instrument subset). Scenario E falls back to 1000-receiver local mode (Kubernetes path returns an error).</div>
+      <div class="workaround"><strong>Workaround:</strong> Use <code>--receivers N</code> + <code>--duration Xs</code> to emulate scenarios manually. Selective subscription requires the <code>TopicTransport</code> interface which is defined but not wired to the scenario runner.</div>
+    </div>
+
+    <div class="tradeoff">
+      <div class="severity">
+        <span class="badge badge-red">Not implemented</span>
+        <h4>Broadcast strategy selection</h4>
+      </div>
+      <div class="detail"><code>internal/broadcast/</code> has four strategy implementations: <code>NaiveBroadcaster</code>, <code>WorkerPoolBroadcaster</code>, <code>ShardedBroadcaster</code>, <code>EpollBroadcaster</code>. The <code>--broadcast-strat</code> flag is accepted but the scenario runner never uses it — <code>broadcastLoop</code> always calls <code>srv.Broadcast()</code> directly, bypassing this selection entirely.</div>
+      <div class="workaround"><strong>To fix:</strong> The runner needs a <code>Broadcaster</code> wrapper that intercepts <code>Broadcast(data)</code>, routes through the chosen strategy, and forwards each message to the underlying transport's per-connection send paths.</div>
+    </div>
+
+  </div>
+</div>
+
+</main>
+
+<script>
+// Highlight active nav link on scroll
+const sections = document.querySelectorAll('.section');
+const navLinks = document.querySelectorAll('nav a');
+
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      const id = entry.target.id;
+      navLinks.forEach(a => {
+        a.classList.toggle('active', a.getAttribute('href') === '#' + id);
+      });
+    }
+  });
+}, { rootMargin: '-20% 0px -70% 0px' });
+
+sections.forEach(s => observer.observe(s));
+
+// Smooth highlight on click
+navLinks.forEach(a => {
+  a.addEventListener('click', () => {
+    navLinks.forEach(x => x.classList.remove('active'));
+    a.classList.add('active');
+  });
+});
+</script>
+</body>
+</html>

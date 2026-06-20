@@ -1,0 +1,27 @@
+# benchmark.yaml — default configuration for benchmark-runner
+# Override any value with flags: --protocol, --scenario, --duration, etc.
+# Environment variables are also read (e.g. BENCHMARK_SERVER_ADDR).
+
+server:
+  addr: "127.0.0.1"
+  port: 9000
+
+benchmark:
+  protocol: "udp"
+  scenario: "A"
+  msg_size: 1024
+  duration: "60s"
+  warmup: "5s"
+  receivers: 1
+  senders: 1
+  rate_limit: 0           # 0 = flood
+  generator: "random"     # random | sequential | json | binary | market
+  network_profile: "clean"
+  broadcast_strat: "naive" # naive | workerpool | sharded
+
+output:
+  format: "json"           # json | markdown | html
+  file: ""                 # empty = stdout
+
+# Optional: persist results to PostgreSQL
+# store_postgres: "postgres://user:password@localhost:5432/benchmarks?sslmode=disable"

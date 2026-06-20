@@ -76,21 +76,23 @@ func buildLogger() *zap.Logger {
 // runCmd runs a single scenario.
 func runCmd() *cobra.Command {
 	var (
-		protocol    string
-		scenario    string
-		msgSize     int
-		duration    time.Duration
-		warmup      time.Duration
-		receivers   int
-		senders     int
-		rateLimit   int
-		netProfile  string
-		bcastStrat  string
-		genType     string
-		serverAddr  string
-		serverPort  int
-		output      string
-		pgDSN       string
+		protocol   string
+		scenario   string
+		msgSize    int
+		duration   time.Duration
+		warmup     time.Duration
+		receivers  int
+		senders    int
+		rateLimit  int
+		netProfile string
+		bcastStrat string
+		genType    string
+		serverAddr string
+		serverPort int
+		output     string
+		pgDSN      string
+		uiEnabled  bool
+		uiPort     int
 	)
 
 	cmd := &cobra.Command{
@@ -120,6 +122,14 @@ func runCmd() *cobra.Command {
 			}
 
 			runner := scenarios.NewRunner(cfg, logger)
+
+			if uiEnabled {
+				uiSrv := startUI(uiPort, cfg, runner.Recorder())
+				defer shutdownUI(uiSrv)
+				logger.Info("benchmark dashboard", zap.String("url", fmt.Sprintf("http://localhost:%d", uiPort)))
+				fmt.Printf("\n  Open http://localhost:%d in your browser to see live metrics\n\n", uiPort)
+			}
+
 			result, err := runner.Run(ctx)
 			if err != nil {
 				return fmt.Errorf("run: %w", err)
@@ -157,6 +167,8 @@ func runCmd() *cobra.Command {
 	cmd.Flags().IntVar(&serverPort, "port", 9000, "server base port")
 	cmd.Flags().StringVar(&output, "output", "json", "output format (json|markdown|html)")
 	cmd.Flags().StringVar(&pgDSN, "store-postgres", "", "PostgreSQL DSN to store results")
+	cmd.Flags().BoolVar(&uiEnabled, "ui", false, "enable live web dashboard")
+	cmd.Flags().IntVar(&uiPort, "ui-port", 8080, "port for the live dashboard")
 
 	return cmd
 }
