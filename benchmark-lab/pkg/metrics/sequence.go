@@ -95,47 +95,58 @@ func (t *SequenceTracker) clearRange(from, to uint64) {
 
 // Observe records a received sequence number.
 //
+// The window is a ring of windowSize bits, so seq and seq±windowSize share a
+// bit. To keep that aliasing from producing false duplicates, the window clears
+// each slot as the frontier advances into it (the "entering" slots), rather than
+// relying on a duplicate check for sequence numbers at or ahead of the frontier
+// — which can never be duplicates.
+//
 // Cases:
-//  1. seq < nextExpected and isSet(seq): duplicate (already counted as delivered)
-//  2. seq < nextExpected and !isSet(seq): late arrival (reorder); still counts as delivered
-//  3. seq == nextExpected: in-order delivery; advance frontier
-//  4. seq > nextExpected: advance frontier, gaps become tentatively pending
-//     (they may still arrive; final loss accounting happens in Flush)
+//  1. seq >= nextExpected: a new in-order or jump-ahead delivery. Clear the slots
+//     rotating into the window from the right, mark seq, and advance the frontier.
+//  2. seq within [nextExpected-windowSize, nextExpected): a late arrival. A set
+//     bit means a true duplicate; an unset bit means a gap fill (reorder).
+//  3. seq below the window: too old to verify without corrupting a newer slot
+//     that aliases it; counted conservatively as a duplicate.
 func (t *SequenceTracker) Observe(seq uint64) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if t.isSet(seq) {
-		// Already seen — duplicate
+	if seq >= t.nextExpected {
+		// At or ahead of the frontier — cannot be a duplicate. Clear the slots
+		// entering the window from the right so a stale bit from windowSize ago
+		// does not alias as a false duplicate, then mark seq.
+		if seq-t.nextExpected >= t.windowSize {
+			// Jump at least a full window wide: every slot is replaced.
+			for i := range t.window {
+				t.window[i] = 0
+			}
+		} else {
+			t.clearRange(t.nextExpected, seq+1)
+		}
+		t.set(seq)
+		t.Stats.Delivered.Add(1)
+		t.nextExpected = seq + 1
+		return
+	}
+
+	// seq < nextExpected — a late arrival.
+	if t.nextExpected-seq > t.windowSize {
+		// Below the trackable window. A first late arrival cannot be told apart
+		// from a replay without corrupting a newer slot that aliases this one, so
+		// count it conservatively as a duplicate.
 		t.Stats.Duplicated.Add(1)
 		return
 	}
-
-	t.set(seq)
-	t.Stats.Delivered.Add(1)
-
-	if seq < t.nextExpected {
-		// Arrived late — reorder
-		t.Stats.Reordered.Add(1)
+	if t.isSet(seq) {
+		// Already received within the window — a true duplicate.
+		t.Stats.Duplicated.Add(1)
 		return
 	}
-
-	// seq >= nextExpected: advance the frontier
-	// Slots between old nextExpected and seq are pending (in-flight).
-	// We do NOT declare them lost here — that happens in Flush().
-	// Clear old window slots as the frontier advances to reuse bit positions.
-	if seq-t.nextExpected > t.windowSize {
-		// Giant jump: clear the entire window to avoid stale bits
-		for i := range t.window {
-			t.window[i] = 0
-		}
-		// Re-mark seq as seen after clearing
-		t.set(seq)
-		t.nextExpected = seq + 1
-	} else {
-		// Normal advance
-		t.nextExpected = seq + 1
-	}
+	// Genuine gap fill: arrived after a higher sequence number.
+	t.set(seq)
+	t.Stats.Delivered.Add(1)
+	t.Stats.Reordered.Add(1)
 }
 
 // Flush declares all sequence numbers in [0, lastSentSeq] that have not been

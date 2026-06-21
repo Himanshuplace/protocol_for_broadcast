@@ -7,32 +7,32 @@ import (
 
 // RunResult captures all measured metrics from one benchmark scenario run.
 type RunResult struct {
-	RunID          string         `json:"run_id"`
-	Protocol       string         `json:"protocol"`
-	Scenario       string         `json:"scenario"`
-	MsgSize        int            `json:"msg_size"`
-	GeneratorType  string         `json:"generator_type"`
-	NetProfile     string         `json:"net_profile"`
-	BroadcastStrat string         `json:"broadcast_strat"`
-	ReceiverCount  int            `json:"receiver_count"`
-	SenderCount    int            `json:"sender_count"`
-	DurationS      int            `json:"duration_s"`
-	WarmupS        int            `json:"warmup_s"`
-	StartedAt      time.Time      `json:"started_at"`
-	EndedAt        time.Time      `json:"ended_at"`
-	GoVersion      string         `json:"go_version"`
-	OSArch         string         `json:"os_arch"`
-	CPUModel       string         `json:"cpu_model"`
+	RunID          string    `json:"run_id"`
+	Protocol       string    `json:"protocol"`
+	Scenario       string    `json:"scenario"`
+	MsgSize        int       `json:"msg_size"`
+	GeneratorType  string    `json:"generator_type"`
+	NetProfile     string    `json:"net_profile"`
+	BroadcastStrat string    `json:"broadcast_strat"`
+	ReceiverCount  int       `json:"receiver_count"`
+	SenderCount    int       `json:"sender_count"`
+	DurationS      int       `json:"duration_s"`
+	WarmupS        int       `json:"warmup_s"`
+	StartedAt      time.Time `json:"started_at"`
+	EndedAt        time.Time `json:"ended_at"`
+	GoVersion      string    `json:"go_version"`
+	OSArch         string    `json:"os_arch"`
+	CPUModel       string    `json:"cpu_model"`
 
 	// Latency (nanoseconds)
-	LatMinNs    int64   `json:"lat_min_ns"`
-	LatAvgNs    int64   `json:"lat_avg_ns"`
-	LatP50Ns    int64   `json:"lat_p50_ns"`
-	LatP95Ns    int64   `json:"lat_p95_ns"`
-	LatP99Ns    int64   `json:"lat_p99_ns"`
-	LatP999Ns   int64   `json:"lat_p999_ns"`
-	LatMaxNs    int64   `json:"lat_max_ns"`
-	LatStddevNs int64   `json:"lat_stddev_ns"`
+	LatMinNs    int64 `json:"lat_min_ns"`
+	LatAvgNs    int64 `json:"lat_avg_ns"`
+	LatP50Ns    int64 `json:"lat_p50_ns"`
+	LatP95Ns    int64 `json:"lat_p95_ns"`
+	LatP99Ns    int64 `json:"lat_p99_ns"`
+	LatP999Ns   int64 `json:"lat_p999_ns"`
+	LatMaxNs    int64 `json:"lat_max_ns"`
+	LatStddevNs int64 `json:"lat_stddev_ns"`
 
 	// Throughput
 	MsgsPerSec    float64 `json:"msgs_per_sec"`
@@ -41,10 +41,10 @@ type RunResult struct {
 	TotalMsgsRecv int64   `json:"total_msgs_recv"`
 
 	// Reliability
-	MsgsLost      int64   `json:"msgs_lost"`
-	MsgsReordered int64   `json:"msgs_reordered"`
-	MsgsDuplicated int64  `json:"msgs_duplicated"`
-	LossRatePct   float64 `json:"loss_rate_pct"`
+	MsgsLost       int64   `json:"msgs_lost"`
+	MsgsReordered  int64   `json:"msgs_reordered"`
+	MsgsDuplicated int64   `json:"msgs_duplicated"`
+	LossRatePct    float64 `json:"loss_rate_pct"`
 
 	// Resources
 	CPUPctAvg     float64 `json:"cpu_pct_avg"`
@@ -62,8 +62,29 @@ type RunResult struct {
 	ReconnectAvgNs int64 `json:"reconnect_avg_ns"`
 	ReconnectP99Ns int64 `json:"reconnect_p99_ns"`
 
+	// Per-client breakdown (one entry per connected subscriber). Populated for
+	// multi-receiver broadcast runs; empty otherwise.
+	PerClient []ClientStat `json:"per_client,omitempty"`
+
 	// Arbitrary extra fields
 	Config map[string]any `json:"config,omitempty"`
+}
+
+// ClientStat is the per-subscriber view of a broadcast run: what this one client
+// received, how much it missed relative to the fastest client, and its latency.
+type ClientStat struct {
+	ClientID    string  `json:"client_id"`
+	MsgRecv     int64   `json:"msg_recv"`
+	Delivered   int64   `json:"delivered"`
+	Lost        int64   `json:"lost"`
+	Duplicated  int64   `json:"duplicated"`
+	Reordered   int64   `json:"reordered"`
+	LossRatePct float64 `json:"loss_rate_pct"`
+	FirstSeq    uint64  `json:"first_seq"`
+	LastSeq     uint64  `json:"last_seq"`
+	LatP50Ns    int64   `json:"lat_p50_ns"`
+	LatP99Ns    int64   `json:"lat_p99_ns"`
+	LatMaxNs    int64   `json:"lat_max_ns"`
 }
 
 // ResultCollector stores and retrieves benchmark results.

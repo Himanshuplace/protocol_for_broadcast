@@ -2,6 +2,10 @@
 
 Protocol benchmark platform for real-time market data distribution. Compares UDP, TCP, WebSocket, HTTP/1, HTTP/2, HTTP/3, SSE, WebTransport, and WebRTC across configurable scenarios.
 
+> **Methodology, per-protocol analysis, Grafana, and k6 validation:** see
+> [`BENCHMARKING.md`](./BENCHMARKING.md) — it explains how fairness is guaranteed,
+> what every metric means, and *why each protocol behaves the way it does*.
+
 ## Prerequisites
 
 - Go 1.22+
@@ -22,12 +26,12 @@ Add `--ui` to open a browser dashboard that shows metrics updating in real-time:
 go run .\cmd\benchmark-runner\ run --protocol udp --duration 30s --ui
 ```
 
-Then open **http://localhost:8080** in your browser. You will see:
+Then open **http://localhost:7070** in your browser. You will see:
 - Progress bar (warmup → measuring phases)
 - Live throughput and P99 latency charts
 - Key metrics updating every 500ms
 
-Use `--ui-port` to change the port (default 8080).
+Use `--ui-port` to change the port (default 7070).
 
 ## Run Commands
 
@@ -86,7 +90,9 @@ go run .\cmd\benchmark-runner\ report --dsn "postgres://user:pass@localhost:5432
 | `--output` | `json` | `json`, `markdown`, `html` |
 | `--store-postgres` | — | PostgreSQL DSN to persist results |
 | `--ui` | `false` | Enable live web dashboard at localhost |
-| `--ui-port` | `8080` | Port for the live dashboard |
+| `--ui-port` | `7070` | Port for the live dashboard |
+| `--metrics` | `false` | Expose Prometheus `/metrics` (for Grafana) |
+| `--metrics-port` | `9190` | Port for the Prometheus metrics endpoint |
 
 ### `compare`
 

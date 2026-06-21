@@ -8,6 +8,7 @@ import (
 	"time"
 
 	nhws "github.com/coder/websocket"
+	"github.com/google/uuid"
 	"github.com/himanshuplace/protocol_for_broadcast/pkg/transport"
 	"go.uber.org/zap"
 )
@@ -22,6 +23,7 @@ const (
 // It reconnects automatically with exponential backoff on connection loss.
 type CoderClient struct {
 	addr    string
+	id      transport.ConnID
 	handler transport.RecvHandler
 	logger  *zap.Logger
 
@@ -39,6 +41,7 @@ func NewCoderClient(addr string, handler transport.RecvHandler, logger *zap.Logg
 	}
 	return &CoderClient{
 		addr:    addr,
+		id:      transport.ConnID(uuid.NewString()),
 		handler: handler,
 		logger:  logger,
 		writeCh: make(chan []byte, coderWriteChanCap),
@@ -133,7 +136,7 @@ func (c *CoderClient) readPump(ctx context.Context) {
 				continue
 			}
 			if c.handler != nil {
-				c.handler("client", data, recvAt)
+				c.handler(c.id, data, recvAt)
 			}
 		}
 

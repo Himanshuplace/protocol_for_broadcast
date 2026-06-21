@@ -216,7 +216,9 @@ func (c *TCPClient) readPump() {
 		c.recorder.RecordRecv(frame.SeqNum, frame.SendNs, int(frameLen), recvAt.UnixNano())
 
 		if c.handler != nil {
-			connID := transport.ConnID("tcp-" + c.conn.RemoteAddr().String())
+			// Local address is unique per client connection, so an aggregating
+			// recorder can track each subscriber's stream independently.
+			connID := transport.ConnID("tcp-" + c.conn.LocalAddr().String())
 			c.handler(connID, payload, recvAt)
 		}
 	}

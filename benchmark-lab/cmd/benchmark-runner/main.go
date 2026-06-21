@@ -76,23 +76,25 @@ func buildLogger() *zap.Logger {
 // runCmd runs a single scenario.
 func runCmd() *cobra.Command {
 	var (
-		protocol   string
-		scenario   string
-		msgSize    int
-		duration   time.Duration
-		warmup     time.Duration
-		receivers  int
-		senders    int
-		rateLimit  int
-		netProfile string
-		bcastStrat string
-		genType    string
-		serverAddr string
-		serverPort int
-		output     string
-		pgDSN      string
-		uiEnabled  bool
-		uiPort     int
+		protocol    string
+		scenario    string
+		msgSize     int
+		duration    time.Duration
+		warmup      time.Duration
+		receivers   int
+		senders     int
+		rateLimit   int
+		netProfile  string
+		bcastStrat  string
+		genType     string
+		serverAddr  string
+		serverPort  int
+		output      string
+		pgDSN       string
+		uiEnabled   bool
+		uiPort      int
+		metricsOn   bool
+		metricsPort int
 	)
 
 	cmd := &cobra.Command{
@@ -122,6 +124,12 @@ func runCmd() *cobra.Command {
 			}
 
 			runner := scenarios.NewRunner(cfg, logger)
+
+			if metricsOn {
+				exp := startPrometheus(metricsPort, cfg, runner.Recorder())
+				defer exp.stop()
+				logger.Info("prometheus metrics", zap.String("url", fmt.Sprintf("http://localhost:%d/metrics", metricsPort)))
+			}
 
 			if uiEnabled {
 				uiSrv := startUI(uiPort, cfg, runner.Recorder())
@@ -168,24 +176,32 @@ func runCmd() *cobra.Command {
 	cmd.Flags().StringVar(&output, "output", "json", "output format (json|markdown|html)")
 	cmd.Flags().StringVar(&pgDSN, "store-postgres", "", "PostgreSQL DSN to store results")
 	cmd.Flags().BoolVar(&uiEnabled, "ui", false, "enable live web dashboard")
-	cmd.Flags().IntVar(&uiPort, "ui-port", 8080, "port for the live dashboard")
+	cmd.Flags().IntVar(&uiPort, "ui-port", 7070, "port for the live dashboard")
+	cmd.Flags().BoolVar(&metricsOn, "metrics", false, "expose Prometheus /metrics endpoint")
+	cmd.Flags().IntVar(&metricsPort, "metrics-port", 9190, "port for the Prometheus metrics endpoint")
 
 	return cmd
 }
 
-// compareCmd runs all protocols with the same config and outputs a comparison.
+// compareCmd runs a chosen set of protocols sequentially and outputs a
+// side-by-side comparison (summary metrics + per-client breakdown + loss).
 func compareCmd() *cobra.Command {
 	var (
-		scenario   string
-		msgSize    int
-		duration   time.Duration
-		warmup     time.Duration
-		receivers  int
-		netProfile string
-		output     string
+		scenario      string
+		msgSize       int
+		duration      time.Duration
+		warmup        time.Duration
+		receivers     int
+		rateLimit     int
+		genType       string
+		netProfile    string
+		protocolsFlag string
+		output        string
+		outFile       string
+		traceEnabled  bool
 	)
 
-	protocols := []string{
+	defaultProtocols := []string{
 		"udp", "tcp",
 		"websocket-gorilla", "websocket-gobwas", "websocket-coder",
 		"http1", "http2", "http3",
@@ -194,13 +210,18 @@ func compareCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "compare",
-		Short: "Run all protocols and output a comparison table",
+		Short: "Run a set of protocols and output a side-by-side comparison",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			logger := buildLogger()
 			defer logger.Sync() //nolint:errcheck
 
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer cancel()
+
+			protocols := defaultProtocols
+			if strings.TrimSpace(protocolsFlag) != "" {
+				protocols = splitCSV(protocolsFlag)
+			}
 
 			var results []*collector.RunResult
 			port := 9000
@@ -213,16 +234,32 @@ func compareCmd() *cobra.Command {
 					Duration:       duration,
 					WarmupDuration: warmup,
 					ReceiverCount:  receivers,
+					RateLimit:      rateLimit,
 					NetworkProfile: netProfile,
 					BroadcastStrat: "naive",
-					GeneratorType:  "random",
+					GeneratorType:  genType,
 					ServerAddr:     "127.0.0.1",
 					ServerPort:     port,
 				}
 				port += 10
 
+				var traceFile *os.File
+				if traceEnabled {
+					f, err := os.Create(fmt.Sprintf("trace-%s.csv", proto))
+					if err != nil {
+						logger.Warn("trace file create failed", zap.String("protocol", proto), zap.Error(err))
+					} else {
+						traceFile = f
+						cfg.TraceWriter = f
+					}
+				}
+
 				runner := scenarios.NewRunner(cfg, logger)
 				result, err := runner.Run(ctx)
+				if traceFile != nil {
+					_ = traceFile.Close()
+					logger.Info("packet trace written", zap.String("file", traceFile.Name()))
+				}
 				if err != nil {
 					logger.Warn("protocol failed", zap.String("protocol", proto), zap.Error(err))
 					continue
@@ -234,6 +271,22 @@ func compareCmd() *cobra.Command {
 				}
 			}
 
+			if len(results) == 0 {
+				return fmt.Errorf("compare: no protocol produced a result")
+			}
+
+			if output == "html" {
+				f, err := os.Create(outFile)
+				if err != nil {
+					return err
+				}
+				defer f.Close()
+				if err := writeComparisonHTML(f, results); err != nil {
+					return err
+				}
+				fmt.Printf("\n  Comparison report written to %s — open it in a browser.\n\n", outFile)
+				return nil
+			}
 			return outputResults(results, output)
 		},
 	}
@@ -243,10 +296,27 @@ func compareCmd() *cobra.Command {
 	cmd.Flags().DurationVar(&duration, "duration", 30*time.Second, "measurement duration per protocol")
 	cmd.Flags().DurationVar(&warmup, "warmup", 5*time.Second, "warmup duration")
 	cmd.Flags().IntVar(&receivers, "receivers", 10, "number of subscribers")
+	cmd.Flags().IntVar(&rateLimit, "rate-limit", 0, "max messages/sec (0=flood; set this when using --trace)")
+	cmd.Flags().StringVar(&genType, "generator", "random", "payload generator type")
 	cmd.Flags().StringVar(&netProfile, "network-profile", "clean", "network profile")
+	cmd.Flags().StringVar(&protocolsFlag, "protocols", "", "comma-separated protocols to compare (default: all)")
 	cmd.Flags().StringVar(&output, "output", "markdown", "output format (json|markdown|html)")
+	cmd.Flags().StringVar(&outFile, "out", "comparison.html", "output file when --output html")
+	cmd.Flags().BoolVar(&traceEnabled, "trace", false, "write per-packet CSV trace per protocol (use with --rate-limit)")
 
 	return cmd
+}
+
+// splitCSV splits a comma-separated list, trimming spaces and dropping empties.
+func splitCSV(s string) []string {
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // reportCmd generates a report from stored results.

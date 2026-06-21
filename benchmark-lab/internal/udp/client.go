@@ -191,8 +191,9 @@ func (c *UDPClient) receiveLoop() {
 		c.recorder.RecordRecv(frame.SeqNum, frame.SendNs, n, recvAt.UnixNano())
 
 		if c.handler != nil {
-			// ConnID for the server is derived from the server's remote address.
-			connID := transport.ConnID("udp-" + c.conn.RemoteAddr().String())
+			// ConnID is the client's own local address — unique per client socket,
+			// so an aggregating recorder can track each subscriber independently.
+			connID := transport.ConnID("udp-" + c.conn.LocalAddr().String())
 			c.handler(connID, buf[:n], recvAt)
 		}
 	}
