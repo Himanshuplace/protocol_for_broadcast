@@ -1,52 +1,19 @@
 global:
-  scrape_interval: 5s
+  scrape_interval: 1s
   evaluation_interval: 5s
   external_labels:
     monitor: benchmark-platform
 
 scrape_configs:
-  - job_name: udp-server
+  # The benchmark-runner is the single, fair measurement engine for all 11
+  # transports. It runs on the host and exposes /metrics (--metrics flag).
+  # From inside the Prometheus container, the host is reached via
+  # host.docker.internal (Docker Desktop on Windows/macOS).
+  - job_name: benchmark-runner
     static_configs:
-      - targets: ["172.20.0.101:9190"]
-        labels:
-          protocol: udp
+      - targets: ["host.docker.internal:9190"]
 
-  - job_name: tcp-server
-    static_configs:
-      - targets: ["172.20.0.102:9190"]
-        labels:
-          protocol: tcp
-
-  - job_name: websocket-server
-    static_configs:
-      - targets: ["172.20.0.103:9190"]
-        labels:
-          protocol: websocket
-
-  - job_name: http1-server
-    static_configs:
-      - targets: ["172.20.0.104:9190"]
-        labels:
-          protocol: http1
-
-  - job_name: http2-server
-    static_configs:
-      - targets: ["172.20.0.105:9190"]
-        labels:
-          protocol: http2
-
-  - job_name: http3-server
-    static_configs:
-      - targets: ["172.20.0.106:9190"]
-        labels:
-          protocol: http3
-
-  - job_name: sse-server
-    static_configs:
-      - targets: ["172.20.0.107:9190"]
-        labels:
-          protocol: sse
-
-  - job_name: result-collector
-    static_configs:
-      - targets: ["172.20.0.30:8080"]
+  # k6 pushes its own metrics here via the experimental Prometheus
+  # remote-write output (K6_PROMETHEUS_RW_SERVER_URL). These act as the
+  # independent cross-check on HTTP/WebSocket/SSE.
+  # Enable remote-write receiver: prometheus --web.enable-remote-write-receiver

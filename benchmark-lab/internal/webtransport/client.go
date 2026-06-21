@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/quic-go/quic-go"
 	wt "github.com/quic-go/webtransport-go"
 	"go.uber.org/zap"
@@ -20,6 +21,7 @@ import (
 // WebTransportClient connects to a WebTransport server.
 type WebTransportClient struct {
 	serverAddr string
+	id         transport.ConnID
 	mode       Mode
 	handler    transport.RecvHandler
 	recorder   *metrics.Recorder
@@ -42,6 +44,7 @@ func NewWebTransportClient(serverAddr string, mode Mode, handler transport.RecvH
 	}
 	return &WebTransportClient{
 		serverAddr: serverAddr,
+		id:         transport.ConnID(uuid.NewString()),
 		mode:       mode,
 		handler:    handler,
 		recorder:   rec,
@@ -148,8 +151,7 @@ func (c *WebTransportClient) process(data []byte) {
 		c.recorder.RecordRecv(frame.SeqNum, frame.SendNs, len(data), recvAt.UnixNano())
 	}
 	if c.handler != nil {
-		id := transport.ConnID("wt-client")
-		c.handler(id, data, recvAt)
+		c.handler(c.id, data, recvAt)
 	}
 }
 

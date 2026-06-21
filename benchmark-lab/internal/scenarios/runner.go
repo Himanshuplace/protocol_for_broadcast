@@ -1,9 +1,12 @@
 package scenarios
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"runtime"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -38,6 +41,10 @@ type ScenarioConfig struct {
 	// RecvHandler is injected by the runner so factories can route client-side
 	// receives back into the runner's recorder for latency and throughput tracking.
 	RecvHandler transport.RecvHandler
+	// TraceWriter, if set, receives a CSV per-packet trace of the measurement
+	// phase (one row per received packet, per client). Best used with RateLimit
+	// set, since a flood produces millions of rows.
+	TraceWriter io.Writer
 }
 
 // TransportFactory creates a transport from a config.
@@ -60,6 +67,7 @@ type ScenarioRunner struct {
 	cfg      ScenarioConfig
 	recorder *metrics.Recorder
 	logger   *zap.Logger
+	traceOn  atomic.Bool // gates per-packet trace to the measurement phase
 }
 
 // NewRunner creates a ScenarioRunner.
@@ -88,13 +96,43 @@ func (r *ScenarioRunner) Run(ctx context.Context) (*collector.RunResult, error) 
 		return nil, fmt.Errorf("scenario runner: unknown protocol %q", r.cfg.Protocol)
 	}
 
+	// Optional per-packet CSV trace, captured only during the measurement phase.
+	var (
+		traceMu  sync.Mutex
+		traceBuf *bufio.Writer
+		traceCnt int
+	)
+	const traceCap = 5_000_000 // guard against runaway files on flood runs
+	if r.cfg.TraceWriter != nil {
+		traceBuf = bufio.NewWriter(r.cfg.TraceWriter)
+		fmt.Fprintln(traceBuf, "protocol,client_id,seq,send_unixnano,recv_unixnano,latency_us")
+		defer func() {
+			traceMu.Lock()
+			_ = traceBuf.Flush()
+			traceMu.Unlock()
+		}()
+	}
+
 	// Inject a RecvHandler so factories can route client receives into this recorder.
-	r.cfg.RecvHandler = func(_ transport.ConnID, data []byte, recvAt time.Time) {
+	// Each receiver is tracked per connection (RecordRecvFrom) so that with N
+	// subscribers the same broadcast seq is not counted as N-1 duplicates and
+	// throughput is reported per subscriber rather than N× inflated.
+	r.cfg.RecvHandler = func(id transport.ConnID, data []byte, recvAt time.Time) {
 		seq, sendNs, _, err := wire.DecodeHeader(data)
 		if err != nil {
 			return
 		}
-		r.recorder.RecordRecv(seq, sendNs, len(data), recvAt.UnixNano())
+		recvNs := recvAt.UnixNano()
+		r.recorder.RecordRecvFrom(string(id), seq, sendNs, len(data), recvNs)
+		if traceBuf != nil && r.traceOn.Load() {
+			traceMu.Lock()
+			if traceCnt < traceCap {
+				fmt.Fprintf(traceBuf, "%s,%s,%d,%d,%d,%d\n",
+					r.cfg.Protocol, id, seq, sendNs, recvNs, (recvNs-sendNs)/1000)
+				traceCnt++
+			}
+			traceMu.Unlock()
+		}
 	}
 
 	srv, err := factory(r.cfg, r.logger)
@@ -131,7 +169,9 @@ func (r *ScenarioRunner) Run(ctx context.Context) (*collector.RunResult, error) 
 		zap.String("scenario", r.cfg.Scenario),
 		zap.Duration("duration", r.cfg.Duration),
 	)
+	r.traceOn.Store(true)
 	r.broadcastLoop(mCtx, srv, gen, false)
+	r.traceOn.Store(false)
 	r.recorder.Stop()
 
 	endedAt := time.Now()
@@ -139,10 +179,21 @@ func (r *ScenarioRunner) Run(ctx context.Context) (*collector.RunResult, error) 
 	stats := srv.Stats()
 	elapsed := endedAt.Sub(startedAt)
 
+	perClient := buildPerClient(r.recorder.ConnSnapshots())
+	var totalLost int64
 	var lossRatePct float64
-	totalSent := int64(snap.MsgSent)
-	if totalSent > 0 {
-		lossRatePct = float64(snap.Seq.Lost) / float64(totalSent) * 100
+	if len(perClient) > 0 {
+		var sumPct float64
+		for _, pc := range perClient {
+			totalLost += pc.Lost
+			sumPct += pc.LossRatePct
+		}
+		lossRatePct = sumPct / float64(len(perClient))
+	} else {
+		totalLost = int64(stats.Lost)
+		if s := int64(snap.MsgSent); s > 0 {
+			lossRatePct = float64(snap.Seq.Lost) / float64(s) * 100
+		}
 	}
 
 	return &collector.RunResult{
@@ -175,7 +226,7 @@ func (r *ScenarioRunner) Run(ctx context.Context) (*collector.RunResult, error) 
 		TotalMsgsSent: int64(snap.MsgSent),
 		TotalMsgsRecv: int64(snap.MsgRecv),
 
-		MsgsLost:       int64(stats.Lost),
+		MsgsLost:       totalLost,
 		LossRatePct:    lossRatePct,
 		MsgsReordered:  int64(snap.Seq.Reordered),
 		MsgsDuplicated: int64(snap.Seq.Duplicated),
@@ -194,10 +245,64 @@ func (r *ScenarioRunner) Run(ctx context.Context) (*collector.RunResult, error) 
 		ReconnectAvgNs: snap.Reconnect.Mean.Nanoseconds(),
 		ReconnectP99Ns: snap.Reconnect.P99.Nanoseconds(),
 
+		PerClient: perClient,
+
 		Config: map[string]any{
 			"elapsed_s": elapsed.Seconds(),
 		},
 	}, nil
+}
+
+// buildPerClient converts per-connection snapshots into per-client stats.
+//
+// Loss is measured RELATIVE to the fastest client: globalMax is the highest
+// sequence number any subscriber received (a proxy for the last broadcast), and
+// each client's loss counts the sequence numbers from its first received seq up
+// to globalMax that it did not receive. This answers "which client missed what,"
+// without needing the server's internal counter, and never penalizes a client
+// for sequence numbers broadcast before it joined.
+func buildPerClient(conns []metrics.ConnSnapshot) []collector.ClientStat {
+	if len(conns) == 0 {
+		return nil
+	}
+	var globalMax uint64
+	for _, c := range conns {
+		if c.LastSeq > globalMax {
+			globalMax = c.LastSeq
+		}
+	}
+	sort.Slice(conns, func(i, j int) bool { return conns[i].ConnID < conns[j].ConnID })
+
+	out := make([]collector.ClientStat, 0, len(conns))
+	for _, c := range conns {
+		var lost int64
+		var lossPct float64
+		if c.Delivered > 0 && c.FirstSeq > 0 {
+			expected := int64(globalMax-c.FirstSeq) + 1
+			lost = expected - int64(c.Delivered)
+			if lost < 0 {
+				lost = 0
+			}
+			if expected > 0 {
+				lossPct = float64(lost) / float64(expected) * 100
+			}
+		}
+		out = append(out, collector.ClientStat{
+			ClientID:    c.ConnID,
+			MsgRecv:     int64(c.MsgRecv),
+			Delivered:   int64(c.Delivered),
+			Lost:        lost,
+			Duplicated:  int64(c.Duplicated),
+			Reordered:   int64(c.Reordered),
+			LossRatePct: lossPct,
+			FirstSeq:    c.FirstSeq,
+			LastSeq:     c.LastSeq,
+			LatP50Ns:    c.Latency.P50.Nanoseconds(),
+			LatP99Ns:    c.Latency.P99.Nanoseconds(),
+			LatMaxNs:    c.Latency.Max.Nanoseconds(),
+		})
+	}
+	return out
 }
 
 func (r *ScenarioRunner) broadcastLoop(ctx context.Context, srv transport.Transport, gen func() []byte, warmup bool) {

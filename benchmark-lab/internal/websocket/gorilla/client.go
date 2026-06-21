@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/himanshuplace/protocol_for_broadcast/pkg/transport"
 	"go.uber.org/zap"
@@ -22,6 +23,7 @@ const (
 // It reconnects automatically with exponential backoff on connection loss.
 type GorillaClient struct {
 	addr    string
+	id      transport.ConnID
 	handler transport.RecvHandler
 	logger  *zap.Logger
 
@@ -39,6 +41,7 @@ func NewGorillaClient(addr string, handler transport.RecvHandler, logger *zap.Lo
 	}
 	return &GorillaClient{
 		addr:    addr,
+		id:      transport.ConnID(uuid.NewString()),
 		handler: handler,
 		logger:  logger,
 		writeCh: make(chan []byte, writeChanCap),
@@ -136,7 +139,7 @@ func (c *GorillaClient) readPump(ctx context.Context) {
 				continue
 			}
 			if c.handler != nil {
-				c.handler("client", data, recvAt)
+				c.handler(c.id, data, recvAt)
 			}
 		}
 
